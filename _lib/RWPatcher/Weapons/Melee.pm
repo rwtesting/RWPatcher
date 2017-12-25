@@ -1,12 +1,9 @@
 package RWPatcher::Weapons::Melee;
 
+use RWPatcher;
+use parent "RWPatcher";
+
 # Generate patch files for melee weapon mod files (e.g. Star Wars Lightsabers).
-
-use XML::Simple;
-use File::Basename qw(dirname basename);
-
-#
-# Generate CE patch for sourcefile(s):
 # - add weapon bulk
 # - add armor penetration (tools nodes)
 # - add EC attribute to tools node entries
@@ -68,51 +65,17 @@ my %AP = (
 sub new
 {
     my($class, %params) = @_;
-    my $self = {};
-    my $errcount = 0;  # count all validation errors before dying
 
-    bless($self, $class);
+    my %VALIDPARAMS = (
+        Bulk		 => { required => 1, type => "" },
+  	armorPenetration => { required => 0, type => "" },
+  	MeleeCritChance  => { required => 0, type => "" },
+  	MeleeParryChance => { required => 0, type => "" },
+  	weaponTags       => { required => 0, type => "ARRAY" },
+    );
 
-    # Verify - \@sourcefiles
-    if (!$params{sourcefiles} || ref($params{sourcefiles}) ne 'ARRAY')
-    {
-        ____warn("new(): sourcefiles parameter is not an array");
-	++$errcount;
-    }
-
-    # Verify - \%cedata
-    if (!$params{cedata} || ref($params{cedata}) ne 'HASH')
-    {
-        ____warn("new(): cedata parameter is not a hash");
-	++$errcount;
-    }
-
-    my($weapon, $data, $required);
-    while ( ($weapon,$data) = each %{$params{cedata}} )
-    {
-        foreach $required ( qw(Bulk) )
-	{
-	    if (!$data->{$required})
-	    {
-	        ____warn("new(): cedata entry for $weapon is missing required parameter: $required");
-		++$errcount;
-	    }
-	}
-
-	# don't bother validating optional params
-    }
-
-    # Exception if invalid
-    if ($errcount > 0)
-    {
-        ____die("new(): Found $errcount validation errors.");
-    }
-
-    # Valid - init
-    $self->{sourcefiles} = $params{sourcefiles};
-    $self->{cedata}      = $params{cedata};
-    $self->{sourcemod}   = $params{sourcemod} if exists $params{sourcemod};
-    return $self;
+    # Base handles parameter validation + initialization
+    return $class->SUPER::new(params => \%params, validator => \%VALIDPARAMS);
 }
 
 # Generate patch files for this patcher
@@ -121,74 +84,32 @@ sub generate_patches
     my($self) = @_;
 
     # Make sure output dirs are created before trying to write any patches
-    my($sourcefile, $outdir);
-    foreach $sourcefile (@{$self->{sourcefiles}})
-    {
-        $outdir = basename(dirname($sourcefile));
-	if (! -e $outdir)
-	{
-	    mkdir($outdir) or ____die("mkdir $outdir: $!");
-	}
-	elsif (! -d $outdir)
-	{
-	    ____die("Output dir $outdir exists but is not a directory.");
-	}
-    }
+    $self->__setup_patch_dirs();
 
     # Patch each source file
-    my($source, $outfile);
     foreach $sourcefile (@{$self->{sourcefiles}})
     {
 
-    __info("Source - $sourcefile");
-
-    # Generate output patch file name
-    $sourcefile =~ s/(?:-REF)?\.txt/.xml/;
-    $outfile = basename(dirname($sourcefile)) . "/" . basename($sourcefile);
-    __info("Patch  - $outfile\n");
-
     # Open source/output files
-    $source =  XMLin($sourcefile, ForceArray => [qw(ThingDef li)])
-        or __die("read source xml $sourcefile: $!\n");
-    open(OUTFILE, ">", $outfile)
-        or __die("Failed to open/write $outfile: $!\n");
+    $self->__info("Source - $sourcefile");
+    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile));
+    $self->__init_sourcexml($sourcefile);
 
-    # Header
-    __print_patch(<<EOF);
-<?xml version="1.0" encoding="utf-8" ?>
-<Patch>
+    $self->__print_patch_header();
 
-    <!-- Warning: This will break if original mod moves weapons into diff files.
-         Use a patch sequence for each file to reduce load times. -->
-
-  <Operation Class="PatchOperationSequence">
-  <success>Always</success>
-  <operations>
-
-EOF
-
-    # Is source mod loaded?
-    if (exists $self->{sourcemod})
-    {
-        __print_patch(<<EOF);
-    <li Class="CombatExtended.PatchOperationFindMod">
-        <modName>$self->{sourcemod}</modName>
-    </li>
-
-EOF
-    }
+    $self->__print_sourcemod_check();
 
     # Step through source xml.
-    # Generate patch for each known defName/blaster in the same order.
+    # Generate patch for each known defName/weapon in the same order.
     my($weapon, $data, $key, $val, $ref);
-    foreach my $entry ( @{$source->{ThingDef}} )
+    foreach my $entry ( @{$self->{sourcexml}->{ThingDef}} )
     {
         next unless exists($entry->{defName}) && exists $self->{cedata}->{$entry->{defName}};
         $weapon = $entry->{defName};
         $data = $self->{cedata}->{$entry->{defName}};
     
         # Add CE bulk
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
 
         <!-- ========== $weapon ========== -->
 
@@ -204,7 +125,7 @@ EOF
         # Add CE weapon tags
         if (exists $data->{weaponTags})
         {
-            __print_patch(<<EOF);
+            $self->__print_patch(<<EOF);
         <!-- Insert CE weapon tags. Create node if needed -->
 	<li Class="PatchOperationSequence">
   	<success>Always</success>
@@ -228,12 +149,12 @@ EOF
 EOF
             foreach $key (@{$data->{weaponTags}})
             {
-                __print_patch(<<EOF);
+                $self->__print_patch(<<EOF);
                 <li>$key</li>
 EOF
 	    }
 
-            __print_patch(<<EOF);
+            $self->__print_patch(<<EOF);
 	    </value>
 	</li>
 
@@ -241,7 +162,7 @@ EOF
         }
 
         # Add CE attribute to tools node entries
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
 	<!-- Add CE attribute to all tools entries -->
 	<li Class="PatchOperationAttributeSet">
 	    <xpath>Defs/ThingDef[defName="$weapon"]/tools/li</xpath>
@@ -258,7 +179,7 @@ EOF
                 # AP based on capacity (default to a17 value || 0.01)
 	        $key = $ref->{capacities}->{li}->[0];
 	        $val = $key && $AP{$key} ? $AP{$key} : ($data->{armorPenetration} || 0);
-                __print_patch(<<EOF);
+                $self->__print_patch(<<EOF);
 	<li Class="PatchOperationAdd">
 	    <xpath>Defs/ThingDef[defName="$weapon"]/tools/li[label="$ref->{label}"]</xpath>
 	    <value>
@@ -282,7 +203,7 @@ EOF
 EOF
         if ($val)
 	{
-	    __print_patch(<<EOF);
+	    $self->__print_patch(<<EOF);
 	 <!-- Crit/Parry chances, modeled after CE patches for core melee weapons -->
          <li Class="PatchOperationAdd">
              <xpath>Defs/ThingDef[defName="$weapon"]</xpath>
@@ -297,36 +218,16 @@ EOF
         }
     }
 
-    # Add armor penetration to all tools node entries
-
     # Closer
-    __print_patch(<<EOF);
-  </operations>  <!-- end sequence -->
-  </Operation>   <!-- end sequence -->
-
-</Patch>
-
-EOF
-    close(OUTFILE) or __warn("close $outfile: $!\n");
+    $self->__print_patch_closer();
+    $self->__close_patchfile();
 
     } # end foreach sourcefile
 
     return 1;  # success
 } # end generate_patches()
 
-#############
-# FUNCTIONS #
-#############
-
-# print to patch file (uses global filehandle OUTFILE)
-sub __print_patch {
-    print OUTFILE (@_);
-}
-
-# Util
-sub __info { print(__PACKAGE__, ": ", @_, "\n"); }
-sub __warn { warn(__PACKAGE__, ": WaRN: ", @_, "\n"); }
-sub __die  { warn(__PACKAGE__, ": ERR: ", @_, "\n"); exit(1); }
+1;
 
 __END__
 

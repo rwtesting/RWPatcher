@@ -2,12 +2,8 @@ package RWPatcher::Animals;
 
 # Generate patch files for animal mod file(s) (e.g. Dinosauria).
 
-use XML::Simple;
-use File::Basename qw(basename dirname);
-
-#
-# Generate patch to make Dinosauria races compatible with Combat Extended, b18.
-#
+use RWPatcher;
+use parent "RWPatcher";
 
 # Source file name format:
 # For each, patch file will be ./<base-dir-name>/<file.xml>
@@ -78,51 +74,18 @@ my %DEFAULT_AP = (
 sub new
 {
     my($class, %params) = @_;
-    my $self = {};
-    my $errcount = 0;  # count all validation errors before dying
 
-    bless($self, $class);
+    my %VALIDPARAMS = (
+        MeleeDodgeChance  => { required => 1, type => "" },
+        MeleeCritChance   => { required => 1, type => "" },
+        ArmorRating_Blunt => { required => 0, type => "" },
+        ArmorRating_Sharp => { required => 0, type => "" },
+        bodyShape         => { required => 0, type => "" },
+        baseHealthScale   => { required => 0, type => "" },
+    );
 
-    # Verify - \@sourcefiles
-    if (!$params{sourcefiles} || ref($params{sourcefiles}) ne 'ARRAY')
-    {
-        __warn("new(): sourcefiles parameter is not an array");
-	++$errcount;
-    }
-
-    # Verify - \%cedata
-    if (!$params{cedata} || ref($params{cedata}) ne 'HASH')
-    {
-        __warn("new(): cedata parameter is not a hash");
-	++$errcount;
-    }
-
-    my($animal, $data, $required);
-    while ( ($animal,$data) = each %{$params{cedata}} )
-    {
-        foreach $required ( qw(MeleeDodgeChance MeleeCritChance) )
-	{
-	    if (!$data->{$required})
-	    {
-	        __warn("new(): cedata entry for $animal is missing required parameter: $required");
-		++$errcount;
-	    }
-	}
-
-	# don't bother validating optional params
-    }
-
-    # Exception if invalid
-    if ($errcount > 0)
-    {
-        __die("new(): Found $errcount validation errors.");
-    }
-
-    # Valid - init
-    $self->{sourcefiles} = $params{sourcefiles};
-    $self->{cedata}      = $params{cedata};
-    $self->{sourcemod}   = $params{sourcemod} if exists $params{sourcemod};
-    return $self;
+    # Base handles parameter validation + initialization
+    return $class->SUPER::new(params => \%params, validator => \%VALIDPARAMS);
 }
 
 # Generate patch files for this patcher
@@ -130,62 +93,24 @@ sub generate_patches
 {
     my($self) = @_;
 
+
     # Make sure output dirs are created before trying to write any patches
-    my($sourcefile, $outdir);
-    foreach $sourcefile (@{$self->{sourcefiles}})
-    {
-        $outdir = basename(dirname($sourcefile));
-	if (! -e $outdir)
-	{
-	    mkdir($outdir) or __die("mkdir $outdir: $!");
-	}
-	elsif (! -d $outdir)
-	{
-	    __die("Output dir $outdir exists but is not a directory.");
-	}
-    }
+    $self->__setup_patch_dirs();
 
     # Patch each source file
-    my($source, $outfile);
-    foreach $sourcefile (@{$self->{sourcefiles}})
+    my($entry, $patchable, $tool, $ap, $bodyshape, $armortype, $statbases, $tag);
+    foreach my $sourcefile (@{$self->{sourcefiles}})
     {
-
-    __info("Source - $sourcefile");
-
-    # Generate output patch file name
-    $sourcefile =~ s/(?:-REF)?\.txt/.xml/;
-    $outfile = basename(dirname($sourcefile)) . "/" . basename($sourcefile);
-    __info("Patch  - $outfile\n");
 
     # Open source/output files
-    $source =  XMLin($sourcefile, ForceArray => [qw(ThingDef li)])
-        or __die("read source xml $sourcefile: $!\n");
-    open(OUTFILE, ">", $outfile)
-        or __die("Failed to open/write $outfile: $!\n");
+    $self->__info("Source - $sourcefile");
+    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile));
+    $self->__init_sourcexml($sourcefile);
 
-    # Header 
-    __print_patch(<<EOF);
-<?xml version="1.0" encoding="utf-8" ?>
-<Patch>
+    $self->__print_patch_header();
 
-  <Operation Class="PatchOperationSequence">
-  <success>Always</success>
-  <operations>
+    $self->__print_sourcemod_check();
 
-EOF
-
-    # Is source mod loaded?
-    if (exists $self->{sourcemod})
-    {
-        __print_patch(<<EOF);
-    <li Class="CombatExtended.PatchOperationFindMod">
-        <modName>$self->{sourcemod}</modName>
-    </li>
-
-EOF
-    }
-
-    #
     # Step through source xml.
     # Generate a template for each $patchable found.
     # If entity is found that we don't have CE values for, warn and skip.
@@ -194,15 +119,14 @@ EOF
     # - Use one sequence per file to reduce load times, short circuit.
     # - Load times: Defs/ThingDef < /Defs/ThingDef << */ThingDef/ <<< //ThingDef/
     #
-    my($patchable, $tool, $ap, $bodyshape, $armortype, $statbases, $tag);
-    foreach my $entry ( @{$source->{ThingDef}} )
+    foreach $entry ( @{$self->{sourcexml}->{ThingDef}} )
     {
         # Skip non-entities and unknown entities
         next unless ($patchable = $entry->{defName}) && $entry->{ParentName} eq "AnimalThingBase";
 
         if (!exists $self->{cedata}->{$patchable})
         {
-            __warn(<<EOF);
+            $self->__warn(<<EOF);
 WARN: New or unknown entity found. Skipping because no CE data:
 
 Name: $patchable
@@ -214,14 +138,14 @@ EOF
         }
 
         # Start patch
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
     <!-- ========== $patchable ========== -->
 
 EOF
 
         # Add bodyShape
         $bodyshape = $self->{cedata}->{$patchable}->{bodyShape} || $DEFAULT{bodyShape};
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
     <li Class="PatchOperationAddModExtension">
     <xpath>Defs/ThingDef[defName="$patchable"]</xpath>
     <value>
@@ -236,7 +160,7 @@ EOF
         # For each bodypartgroup listed for this entity, add CE attribute + armor pen value
         if ($entry->{tools}->{li})
         {
-	    __print_patch(<<EOF);
+	    $self->__print_patch(<<EOF);
     <!-- Patch $patchable : Tools / Verbs -->
 
 EOF
@@ -244,7 +168,7 @@ EOF
             {
                 $ap = $DEFAULT_AP{$tool->{linkedBodyPartsGroup}} || $DEFAULT_AP;
 	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup"; # rare case where 2 entries for same bodypart, different id (e.g. Megafauns hornScratch/hornBlunt are both HornAttackTool).
-                __print_patch(<<EOF);
+                $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">
     <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
         <attribute>Class</attribute>
@@ -264,7 +188,7 @@ EOF
 	        # throws parry / armor pen error here (null object).
 	        if (exists $tool->{surpriseAttack})
 	        {
-                    __print_patch(<<EOF);
+                    $self->__print_patch(<<EOF);
     <!-- HACK: temporarily remove stun nodes to prevent CE v0.18.0.2 beta null object error -->
     <li Class="PatchOperationRemove">
     <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]/surpriseAttack</xpath>
@@ -276,7 +200,7 @@ EOF
         }
 
         # Adjust stats
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
     <!-- Patch $patchable : Stats -->
 
 EOF
@@ -284,7 +208,7 @@ EOF
         # Add baseHealthScale
         if (exists $self->{cedata}->{$patchable}->{baseHealthScale})
         {
-            __print_patch(<<EOF);
+            $self->__print_patch(<<EOF);
 
     <li Class="PatchOperationReplace">
     <xpath>Defs/ThingDef[defName="$patchable"]/race/baseHealthScale</xpath>
@@ -320,7 +244,7 @@ EOF
         }
 
         # Add all (defined) statBases
-        __print_patch(<<EOF);
+        $self->__print_patch(<<EOF);
 $statbases
     </value>
     </li>
@@ -329,35 +253,16 @@ EOF
 
     }
 
-    # print closer
-    __print_patch(<<EOF);
-  </operations> <!-- End sequence -->
-  </Operation>  <!-- End sequence -->
-
-</Patch>
-
-EOF
-
-    close(OUTFILE) or __warn("WARN: close $outfile: $!\n");
+    # Closer
+    $self->__print_patch_closer();
+    $self->__close_patchfile();
 
     }  # end foreach source file
 
     return 1; # success
 }  # end generate_patches()
 
-#############
-# FUNCTIONS #
-#############
-
-# print to patch file (uses global filehandle OUTFILE)
-sub __print_patch {
-    print OUTFILE (@_);
-}
-
-# Util
-sub __info { print(__PACKAGE__, ": ", @_, "\n"); }
-sub __warn { warn(__PACKAGE__, ": WaRN: ", @_, "\n"); }
-sub __die  { warn(__PACKAGE__, ": ERR: ", @_, "\n"); exit(1); }
+1;
 
 __END__
 
