@@ -88,6 +88,32 @@ sub new
     return $class->SUPER::new(params => \%params, validator => \%VALIDPARAMS);
 }
 
+# Get/Set expected parent class of animal defs.
+# This is how we determine which defs to patch.
+#
+# For more complex criteria, overwrite is_elem_patchable() method.
+#
+sub expected_parent
+{
+    my($self, $parentname) = @_;
+
+    $self->{expected_parent_class} = $parentname if ($parentname);
+    return $self->{expected_parent_class} || "AnimalThingBase";
+}
+
+# Should this xml child element be patched?
+# Return:
+#   - $defName - yes, patchable
+#   - undef - don't patch
+#
+sub is_elem_patchable
+{
+    my($self, $thiselem) = @_;
+
+    my $defname = $thiselem->{defName};
+    return defined $defname && $thiselem->{ParentName} eq $self->expected_parent() ? $defname : undef;
+}
+
 # Generate patch files for this patcher
 sub generate_patches
 {
@@ -98,7 +124,7 @@ sub generate_patches
     $self->__setup_patch_dirs();
 
     # Patch each source file
-    my($entry, $patchable, $tool, $ap, $bodyshape, $armortype, $statbases, $tag);
+    my($elem, $patchable, $tool, $ap, $bodyshape, $armortype, $statbases, $tag);
     foreach my $sourcefile (@{$self->{sourcefiles}})
     {
 
@@ -119,10 +145,10 @@ sub generate_patches
     # - Use one sequence per file to reduce load times, short circuit.
     # - Load times: Defs/ThingDef < /Defs/ThingDef << */ThingDef/ <<< //ThingDef/
     #
-    foreach $entry ( @{$self->{sourcexml}->{ThingDef}} )
+    foreach $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
         # Skip non-entities and unknown entities
-        next unless ($patchable = $entry->{defName}) && $entry->{ParentName} eq "AnimalThingBase";
+        next unless defined( $patchable = $self->is_elem_patchable($elem) );
 
         if (!exists $self->{cedata}->{$patchable})
         {
@@ -131,7 +157,7 @@ WARN: New or unknown entity found. Skipping because no CE data:
 
 Name: $patchable
 Desc:
-$entry->{description}
+$elem->{description}
 
 EOF
             next;
@@ -158,13 +184,13 @@ EOF
 EOF
 
         # For each bodypartgroup listed for this entity, add CE attribute + armor pen value
-        if ($entry->{tools}->{li})
+        if ($elem->{tools}->{li})
         {
 	    $self->__print_patch(<<EOF);
     <!-- Patch $patchable : Tools / Verbs -->
 
 EOF
-            foreach $tool ( @{ $entry->{tools}->{li} } )
+            foreach $tool ( @{ $elem->{tools}->{li} } )
             {
                 $ap = $DEFAULT_AP{$tool->{linkedBodyPartsGroup}} || $DEFAULT_AP;
 	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup"; # rare case where 2 entries for same bodypart, different id (e.g. Megafauns hornScratch/hornBlunt are both HornAttackTool).
