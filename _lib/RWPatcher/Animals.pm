@@ -331,7 +331,7 @@ EOF
             foreach $tool ( @{ $elem->{tools}->{li} } )
             {
 		# armor penetration
-		$val = $self->__get_tool_armor_pen($tool->{linkedBodyPartsGroup}, $tool->{capacities}->{li}->[0, $patchable]);
+		$val = $self->__get_tool_armor_pen($tool->{linkedBodyPartsGroup}, $tool->{capacities}->{li}->[0], $patchable);
 
 		# Patch tool by id || bodypartgroup
 		# (id needed if multiple capacities for same body, else not defined,
