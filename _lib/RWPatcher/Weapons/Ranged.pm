@@ -100,7 +100,7 @@ sub generate_patches
 
     # Step through source xml.
     # Generate patch for each known defName/weapon in the same order.
-    my($weapon, $data, $key, $val);
+    my($weapon, $data, $key);
     foreach my $entry ( @{$self->{sourcexml}->{ThingDef}} )
     {
         next unless exists($entry->{defName}) && exists $self->{cedata}{$entry->{defName}};
@@ -203,10 +203,11 @@ EOF
             $self->__print_patch(<<EOF);
         <AmmoUser>
 EOF
-            while ( ($key,$val) = each %{$data->{AmmoUser}} )
+	    # sort keys so that fields are in defined order for diffs
+	    foreach $key (sort keys %{$data->{AmmoUser}})
             {
             $self->__print_patch(<<EOF);
-              <$key>$val</$key>
+              <$key>$data->{AmmoUser}->{$key}</$key>
 EOF
             }
             $self->__print_patch(<<EOF);
@@ -220,10 +221,11 @@ EOF
             $self->__print_patch(<<EOF);
         <FireModes>
 EOF
-            while ( ($key,$val) = each %{$data->{FireModes}} )
+	    # sort keys so that fields are in defined order for diffs
+	    foreach $key (sort keys %{$data->{AmmoUser}})
             {
             $self->__print_patch(<<EOF);
-             <$key>$val</$key>
+             <$key>$data->{FireModes}->{$key}</$key>
 EOF
             }
             $self->__print_patch(<<EOF);
