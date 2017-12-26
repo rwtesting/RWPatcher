@@ -18,35 +18,68 @@ my %DEFAULT = (
     #MeleeCritChance  => 0.79,	# Elephant
 );
 
-# armor types to check (if not defined, don't patch - fallback to source mod values).
+# Armor types to check (if not defined, don't patch - fallback to source mod values).
 my @ARMORTYPES = qw(ArmorRating_Blunt ArmorRating_Sharp);
 
-# armor penetration DEFAULT per bodypart
-my $DEFAULT_AP = 0.15;		# default ap for unlisted bodyparts
-my %DEFAULT_AP = (
-    HeadAttackTool => 0.13,	# Elephant
-    TailAttackTool => 0.17,	# (like a leg?)
+# Armor penetration per bodypart
+#
+# TODO: Simplify this by approximating all AP by capacity, ignore bodypartgroup,
+#       and allow caller/child to specify exceptions per entity+bodypart+capacity.
+#
+my $DEFAULT_AP = 0.15;  # default ap for unlisted bodyparts/capacities
+my %TOOLAP = (
+    HeadAttackTool => { Blunt => 0.133, Scratch => 0.077 },  # Elephant
+    TailAttackTool => { Blunt => 0.17, Scratch => 0.077 },   # (like a leg?)
 
-    HornAttackTool => 0.457,	# Thrumbo (should differentiate between horncut/hornstab)
-    Teeth          => 0.3,	# Gigantopithecus
-    Beak           => 0.3,	# Titanis
-    Mouth          => 0.2,	# Arthropleura
+    HornAttackTool => { Cut => 0.243, Stab => 0.457, Blunt => 0.221, Scratch => 0.077},	# Thrumbo, Rhino(B)
+    Teeth          => { Bite => 0.3, ToxicBite => 0.2, Blunt => 0.17, Scratch => 0.077 }, # Gigantopithecus (Megasloth 0.282)
+    Mouth          => { Bite => 0.2, ToxicBite => 0.2, Scratch => 0.077 }, # Arthropleura, Cobra(T)
+    TuskAttackTool => { Cut => 0.261, Stab => 0.489, Scratch => 0.077 },   # Elephant
+    Feet           => { Blunt => 0.17, Slash => 0.2, Scratch => 0.077 },   # Titanis(Sl)
 
-    LeftLeg        => 0.17,
-    RightLeg       => 0.17,
-    FrontLeftLeg   => 0.17,	# Elephant
-    FrontRightLeg  => 0.17,	# Elephant
+    LeftLeg        => { Blunt => 0.17, Scratch => 0.077 },
+    RightLeg       => { Blunt => 0.17, Scratch => 0.077 },
+    FrontLeftLeg   => { Blunt => 0.17, Scratch => 0.077 },   # Elephant
 
-    LeftHand       => 0.3,	# Gigantopithecus
-    RightHand      => 0.3,	# Gigantopithecus
-    FrontLeftPaw   => 0.25,	# Doedicurus
-    FrontRightPaw  => 0.25,	# Doedicurus
+    LeftHand       => { Blunt => 0.17, Slash => 0.3, Scratch => 0.077 },    # Gigantopithecus(S)
+    FrontLeftPaw   => { Slash => 0.25, Scratch => 0.077 },   # Doedicurus (Megasloth 0.282)
+    FrontLeftClaws  => { Slash => 0.227, Scratch => 0.077 },  # Megascarab, Lynx
+    LeftBlade      => { Cut => 0.207, Stab => 0.388, Blunt => 0.133, Scratch => 0.077 },  # Scyther(C/S)
+);
+# (Megafauna sets a lot of AP to 0.3 in a17, including Blunt. Don't use that for reference.)
 
-    LeftLegClawAttackTool  => 0.227,	# Megascarab headclaw
-    RightLegClawAttackTool => 0.227,	# Megascarab headclaw
-    LeftArmClawAttackTool  => 0.227,	# Megascarab headclaw
-    RightArmClawAttackTool => 0.227,	# Megascarab headclaw
+# Similar
+$TOOLAP{Beak} = $TOOLAP{Teeth};
 
+$TOOLAP{RightLeg} = $TOOLAP{LeftLeg};
+$TOOLAP{FrontRightLeg} = $TOOLAP{FrontLeftLeg};
+$TOOLAP{RightHand} = $TOOLAP{LeftHand};
+$TOOLAP{FrontRightPaw} = $TOOLAP{FrontLeftPaw};
+
+$TOOLAP{LeftArmClawAttackTool} = $TOOLAP{FrontLeftClaws};
+$TOOLAP{LeftLegClawAttackTool} = $TOOLAP{FrontLeftClaws};
+
+$TOOLAP{RightLegClawAttackTool} = $TOOLAP{LeftLegClawAttackTool};
+$TOOLAP{RightArmClawAttackTool} = $TOOLAP{LeftArmClawAttackTool};
+$TOOLAP{FrontRightClaws} = $TOOLAP{FrontLeftClaws};
+$TOOLAP{RightBlade} = $TOOLAP{LeftBlade};
+
+# Megafauna typos
+$TOOLAP{TailWeapon} = $TOOLAP{TailAttackTool};
+$TOOLAP{FeetGroup}  = $TOOLAP{Feet};
+
+# Converting old verbs nodes to tools node (b18)
+# Translate old field names.
+# - If value is $SKIPVERBFIELD, don't include in new tools node.
+# - If not listed here, translate field verbatim.
+my $SKIPVERBFIELD = "__SKIP";
+my %VERB2TOOL = (
+       verbClass             => $SKIPVERBFIELD, # a17: used to have value "CombatExtended.Verb_MeleeAttackCE"
+       defaultCooldownTime   => "cooldownTime",
+       meleeDamageBaseAmount => "power",
+       meleeDamageDef        => "capacities",  # will translate to capacities list
+       #linkedBodyPartsGroup => "linkedBodyPartsGroup",
+       #commonality          => "commonality",
 );
 
 # Constructor
@@ -124,13 +157,13 @@ sub generate_patches
     $self->__setup_patch_dirs();
 
     # Patch each source file
-    my($elem, $patchable, $tool, $ap, $bodyshape, $armortype, $statbases, $tag);
+    my($elem, $patchable, $verb, $tool, $tag, $val, $key);
     foreach my $sourcefile (@{$self->{sourcefiles}})
     {
 
     # Open source/output files
     $self->__info("Source - $sourcefile");
-    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile));
+    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile) . "\n");
     $self->__init_sourcexml($sourcefile);
 
     $self->__print_patch_header();
@@ -170,30 +203,141 @@ EOF
 EOF
 
         # Add bodyShape
-        $bodyshape = $self->{cedata}->{$patchable}->{bodyShape} || $DEFAULT{bodyShape};
+        $val = $self->{cedata}->{$patchable}->{bodyShape} || $DEFAULT{bodyShape};
         $self->__print_patch(<<EOF);
     <li Class="PatchOperationAddModExtension">
     <xpath>Defs/ThingDef[defName="$patchable"]</xpath>
     <value>
         <li Class="CombatExtended.RacePropertiesExtensionCE">
-            <bodyShape>$bodyshape</bodyShape>
+            <bodyShape>$val</bodyShape>
         </li>
     </value>
     </li>
 
 EOF
 
+	# Element defines "verbs" (pre-b18).
+	# Convert these to "tools" nodes and remove the old verbs nodes (else CE errors).
+        if ($elem->{verbs}->{li})
+	{
+	    $self->__print_patch(<<EOF);
+    <!-- Patch $patchable : Verbs (convert to tools) -->
+
+    <!-- Add tools node if it doesn't exist -->
+    <li Class="PatchOperationSequence">
+    <success>Always</success>
+    <operations>
+        <li Class="PatchOperationTest">
+        <xpath>/Defs/ThingDef[defName="$patchable"]/tools</xpath>
+            <success>Invert</success>
+        </li>
+        <li Class="PatchOperationAdd">
+        <xpath>/Defs/ThingDef[defName="$patchable"]</xpath>
+            <value>
+                <tools />
+            </value>
+        </li>
+    </operations>
+    </li>
+
+    <!-- Convert old verbs to new tools nodes -->
+    <li Class="PatchOperationAdd">
+    <xpath>Defs/ThingDef[defName="$patchable"]/tools</xpath>
+    <value>
+EOF
+	    # Step through verb fields in source xml
+            foreach $verb ( @{ $elem->{verbs}->{li} } )
+            {
+	        $self->__print_patch(<<EOF);
+        <li Class="CombatExtended.ToolCE">
+EOF
+
+		# Add <label> and <id>.
+		if (exists $verb->{linkedBodyPartsGroup})
+		{
+		    $val = $self->__get_tool_label($verb->{linkedBodyPartsGroup});
+	            $self->__print_patch(<<EOF);
+            <label>$val</label>
+EOF
+		    if (exists $verb->{meleeDamageDef})
+		    {
+		        $val = $self->__get_tool_id($verb->{linkedBodyPartsGroup}, $verb->{meleeDamageDef});
+	                $self->__print_patch(<<EOF);
+            <id>$val</id>
+EOF
+		    }
+		}
+
+		# Add verbClass (else CE warning)
+	        $self->__print_patch(<<EOF);
+            <verbClass>CombatExtended.Verb_MeleeAttackCE</verbClass>
+EOF
+
+		# Add remaining fields
+		foreach $key ( sort keys %$verb )  # print sorted to avoid unnecessary diffs
+		{
+		    # Translate/Copy field names
+	            if (exists $VERB2TOOL{$key})
+		    {
+			next if $VERB2TOOL{$key} eq $SKIPVERBFIELD;
+			$tag = $VERB2TOOL{$key};
+		    }
+		    else
+		    {
+			$tag = $key
+		    }
+
+		    # Capacities - add as list
+		    $val = $tag eq "capacities" ? "<li>$verb->{$key}</li>" : $verb->{$key};
+
+		    # Add to new tools node
+                    $self->__print_patch(<<EOF);
+            <$tag>$val</$tag>
+EOF
+		}
+
+                # Add CE armor penetration
+		$val = $self->__get_tool_armor_pen($verb->{linkedBodyPartsGroup}, $verb->{meleeDamageDef}, $patchable);
+	        $self->__print_patch(<<EOF);
+            <armorPenetration>$val</armorPenetration>
+        </li>
+EOF
+	    }
+
+	    # Close new tools node + Delete old verbs node
+	    $self->__print_patch(<<EOF);
+    </value>
+    </li>
+
+    <!-- Delete old verbs node (causes CE errors) -->
+    <li Class="PatchOperationRemove">
+    <xpath>Defs/ThingDef[defName="$patchable"]/verbs</xpath>
+    </li>
+
+EOF
+	}
+
+	# Element defines "tools".
         # For each bodypartgroup listed for this entity, add CE attribute + armor pen value
+	#
+	# (mod shouldn't define both verbs and tools, but we won't assume that)
+	#
         if ($elem->{tools}->{li})
         {
 	    $self->__print_patch(<<EOF);
-    <!-- Patch $patchable : Tools / Verbs -->
+    <!-- Patch $patchable : Tools -->
 
 EOF
             foreach $tool ( @{ $elem->{tools}->{li} } )
             {
-                $ap = $DEFAULT_AP{$tool->{linkedBodyPartsGroup}} || $DEFAULT_AP;
-	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup"; # rare case where 2 entries for same bodypart, different id (e.g. Megafauns hornScratch/hornBlunt are both HornAttackTool).
+		# armor penetration
+		$val = $self->__get_tool_armor_pen($tool->{linkedBodyPartsGroup}, $tool->{capacities}->{li}->[0, $patchable]);
+
+		# Patch tool by id || bodypartgroup
+		# (id needed if multiple capacities for same body, else not defined,
+		#  e.g. hornscratch, horn)
+		#
+	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup";
                 $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">
     <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
@@ -204,7 +348,7 @@ EOF
     <li Class="PatchOperationAdd">
     <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
     <value>
-        <armorPenetration>$ap</armorPenetration>
+        <armorPenetration>$val</armorPenetration>
     </value>
     </li>
 
@@ -248,7 +392,7 @@ EOF
 
 
         # statBases: Dodge / Crit
-        $statbases = <<EOF;
+        $val = <<EOF;
     <!-- Patch statBases last so that we know all previous sequence entries succeeded.
          These values are easy to check in-game. -->
     <li Class="PatchOperationAdd">
@@ -259,19 +403,19 @@ EOF
 EOF
 
         # statBases: armor values (if undefined, fallback to core)
-        foreach $armortype (@ARMORTYPES)
+        foreach $tag (@ARMORTYPES)
         {
-            if (exists $self->{cedata}->{$patchable}->{$armortype})
+            if (exists $self->{cedata}->{$patchable}->{$tag})
 	    {
-	        $statbases = $statbases . <<EOF;
-        <$armortype>$self->{cedata}->{$patchable}->{$armortype}</$armortype>
+	        $val = $val . <<EOF;
+        <$tag>$self->{cedata}->{$patchable}->{$tag}</$tag>
 EOF
 	    }
         }
 
         # Add all (defined) statBases
         $self->__print_patch(<<EOF);
-$statbases
+$val
     </value>
     </li>
 
@@ -287,6 +431,44 @@ EOF
 
     return 1; # success
 }  # end generate_patches()
+
+
+#############
+# Utilities #
+#############
+
+# Determine armor penetration value for this tools node
+sub __get_tool_armor_pen
+{
+    my($self, $bodypartgroup, $capacity, $name) = @_;
+
+    # Warn if need to update %TOOLAP
+    my $ap = eval { $TOOLAP{$bodypartgroup}->{$capacity} };  # ?.
+    if (!defined $ap)
+    {
+        $self->__warn("$patchable: $name: Unknown tool $bodypartgroup capacity $capacity. Using default AP. Please update \%TOOLAP.");
+        $ap = $DEFAULT_AP;
+    }
+
+    return $ap;
+}
+
+# Generate the label/id for a tools/verbs node using bodypart+capacity
+sub __get_tool_label
+{
+    my($self, $bodypart) = @_;
+
+    my $label = $bodypart;
+    $label =~ s/(\S)([A-Z])/$1 $2/g;  # "HeadAttackTool" = > "Head Attack Tool"
+    $label = lc($label);
+    $label =~ s/ ?attack tool//;      # => "head"
+    return $label;
+}
+sub __get_tool_id
+{
+    my($self, $bodypart, $capacity) = @_;
+    return lc($bodypart . $capacity);
+}
 
 1;
 

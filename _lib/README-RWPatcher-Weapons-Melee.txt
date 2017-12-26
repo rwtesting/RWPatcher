@@ -27,7 +27,7 @@ Unzip/Install to Mods folder (creates Mods/_lib/ directory).
 
     );
 
-    my $patcher = new RWPatcher::Animals(
+    my $patcher = new RWPatcher::Weapons::Melee(
         sourcemod   => $NAME_OF_MOD_TO_PATCH,  # e.g. "Star Wars - Lightsabers"
         sourcefiles => \@SOURCEFILES,
         cedata      => \%CEDATA,
