@@ -34,6 +34,11 @@ Unzip/Install to Mods folder (creates Mods/_lib/ directory).
             sourcemod  => $NAME_OF_MOD_TO_PATCH,  # e.g. "Dinosauria"
             sourcefile => $sourcefile,
             cedata     => \%CEDATA,
+
+            # List ParentName(s) expected for all animals to be patched, example:
+            # If not even, only patch animals listed in %CEDATA.
+            # Example:
+            expected_parents => [ qw(AnimalThingBase AnotherParent) ],
         );
 
         $patcher->generate_patches();

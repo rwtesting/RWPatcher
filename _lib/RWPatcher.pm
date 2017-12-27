@@ -5,7 +5,6 @@ package RWPatcher;
 use XML::Simple;
 use File::Basename qw(dirname basename);
 use IO::File;
-#use Data::Dumper qw(Dumper);
 
 # Constructor
 # Validate parameters
@@ -13,6 +12,12 @@ use IO::File;
 # Parameters:
 # - params    => \%params - child parameters
 # - validator => \%validator - validate params against this. See below example.
+# - expected_parents => (string/array-ref, optional)
+#                If given, patch only ThingDefs with this ParentName.
+#                If multiple(array-ref), element must match one of the listed ParentName(s).
+#                If not given, patch only defs with defName in cedata.
+#                Specifying parent_thing will identify new entries in source xml that
+#                are not defined in cedata.
 #
 # $validator example = {
 #     $paramname1 => {required => 1, type => ""},      # scalar (string/int/etc.)
@@ -42,15 +47,22 @@ sub new
     # Verify - \@sourcefile
     if (!$params->{sourcefile} || ref($params->{sourcefile}) ne '')
     {
-        $self->__warn("new: sourcefile parameter is missing or is not a string");
+        $self->__warn("new: sourcefile parameter is missing or is not a string (got ".ref($params->{sourcefile}).")");
 	++$errcount;
     }
 
     # Verify - \%cedata
     if (!$params->{cedata} || ref($params->{cedata}) ne 'HASH')
     {
-        $self->__warn("new: cedata parameter is missing or is not a hash");
+        $self->__warn("new: cedata parameter is missing or is not a hash (got ".ref($params->{cedata}).")");
 	++$errcount;
+    }
+
+    # Verify - $expected_parents || \@expected_parents
+    if (defined $params->{expected_parents} && !ref($params->{expected_parents}) eq '' && !ref($params->{expected_parents}) eq 'ARRAY')
+    {
+        $self->__warn("new: expected_parents parameter is not a string or array-ref (got ".ref($params->{expected_parents}).")");
+        ++$errcount;
     }
 
     # For each cedata entry, check for required parameters and validate parameter types
@@ -83,8 +95,101 @@ sub new
     $self->{sourcefile} = $params->{sourcefile};
     $self->{cedata}     = $params->{cedata};
     $self->{sourcemod}  = $params->{sourcemod} if exists $params->{sourcemod};
+    $self->expected_parents($params->{expected_parents}) if $params->{expected_parents};
     return $self;
 }
+
+#########################
+# Patch target criteria #
+#########################
+
+# Patch this child element if one of the following is true:
+#   1. expected_parents is set and this child's ParentName matches it.
+#   2. child's defName is defined in this object's cedata.
+#
+# To change selection criteria, overwrite is_elem_patchable() or expected_parents().
+#
+# Return:
+#   - 1 - yes, patchable
+#   - 0 - don't patch
+#
+# Side effects:
+#   - Warn if we found a child definition matching expected_parents that is not
+#     defined in cedata.  This helps locate new definitions in source mod that need cedata.
+#
+sub is_elem_patchable
+{
+    my($self, $thiselem) = @_;
+
+    my $defname = $thiselem->{defName};
+
+    return 0 unless defined $defname;
+    
+    if ($self->has_expected_parents())
+    {
+        if ($self->is_expected_parent($thiselem->{ParentName}))
+	{
+	    # Warn user to update cedata for new patchable elements found in source mod
+	    if (!defined $self->{cedata}->{$defname})
+	    {
+	        $self->__warn("New entity found: $defname (Skipping - Please add CE DATA).");
+	        return 0;
+	    }
+	    return 1;
+	}
+
+	# If defined in cedata, patch it even though parent doesn't match, but warn user.
+        elsif (defined $self->{cedata}->{$defname})
+	{
+            $self->__warn("Entity '$defname' in cedata has unexpected parent '$thiselem->{ParentName}'. Patching anyway.");
+	    return 1;
+	}
+	return 0;
+    }
+
+    # If caller didn't define expected parent, only patch elements defined in his cedata.
+    if (defined $self->{cedata}->{$defname})
+    {
+        return 1;
+    }
+
+    # Don't patch
+    return 0;
+}
+
+# XML element matches one of the expected ParentName's (and should be patched)
+#
+# For more complex criteria, overwrite is_elem_patchable().
+#
+sub is_expected_parent
+{
+    my($self, $parentname) = @_;
+    return defined $parentname && exists $self->expected_parents()->{$parentname} ? 1 : 0;
+}
+
+# This object checks vs parents (else only checks vs cedata)
+sub has_expected_parents
+{
+    my($self) = @_;
+    return defined $self->expected_parents() ? 1 : 0;
+}
+
+# Set expected parent class(es) of xml defs to be patched.
+# Accepts array/array-ref, Returns hash-ref.
+sub expected_parents
+{
+    my($self, @parentnames) = @_;
+
+    if (@parentnames)
+    {
+        $self->{expected_parents} = { map { $_ => 1 } (ref($parentnames[0]) eq 'ARRAY' ? @{$parentnames[0]} : @parentnames) };
+    }
+    return $self->{expected_parents};
+}
+
+#############
+# Utilities #
+#############
 
 # Print to patch file
 sub __print_patch
@@ -100,7 +205,9 @@ sub __print_patch
     }
 }
 
-# Patch Init/Setup
+####################
+# Patch Init/Setup #
+####################
 
 # Pre-patch initialization and header
 sub __start_patch
@@ -175,7 +282,9 @@ sub __init_patchfile
     return $self->{patchfile};
 }
 
-# Common patch contents
+#########################
+# Common patch contents #
+#########################
 sub __print_patch_header
 {
     my($self) = @_;
@@ -209,7 +318,9 @@ EOF
     }
 }
 
-# Patch Finish/Cleanup
+################
+# Patch Finish #
+################
 sub __end_patch
 {
     my($self) = @_;

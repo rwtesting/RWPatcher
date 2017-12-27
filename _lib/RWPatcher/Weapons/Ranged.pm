@@ -26,6 +26,12 @@ my $VERBCLASS = 'CombatExtended.Verb_ShootCE';
 # - sourcefile - (string) $source_file_path
 # - cedata     - Combat Extended data for each weapon to be patched,
 #                { [ weapon1 => \%data ], ... }
+# - expected_parents => (string/array-ref, optional)
+#                If given, patch only ThingDefs with this ParentName.
+#                If multiple(array-ref), element must match one of the listed ParentName(s).
+#                If not given, patch only defs with defName in cedata.
+#                Specifying parent_thing will identify new entries in source xml that
+#                are not defined in cedata.
 #
 # Throw exception on error.
 #
@@ -87,14 +93,17 @@ sub generate_patches
     # Step through source xml.
     # Generate patch for each known defName/weapon in the same order.
     my($weapon, $data, $key);
-    foreach my $entry ( @{$self->{sourcexml}->{ThingDef}} )
+    foreach my $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
-        next unless exists($entry->{defName}) && exists $self->{cedata}{$entry->{defName}};
-        $weapon = $entry->{defName};
-        $data = $self->{cedata}{$entry->{defName}};
+        # Skip non-entities and unknown entities
+        next unless $self->is_elem_patchable($elem);
+	$patchable = $elem->{defName};
+
+        $weapon = $elem->{defName};
+        $data = $self->{cedata}{$elem->{defName}};
 
         $self->__print_patch(<<EOF);
-    <!-- ========== $entry->{defName} ========== -->
+    <!-- ========== $elem->{defName} ========== -->
 
     <!-- Create tools node if it doesn't exist -->
     <li Class="PatchOperationSequence">
@@ -165,7 +174,7 @@ sub generate_patches
 EOF
 
         # Add weapon tags from both source xml and CE data, if any
-        #%union = map {$_ => 1} (exists $entry->{weaponTags} ? @{$entry->{weaponTags}->{li}} : (), exists $data->{weaponTags} ? @{$data->{weaponTags}} : ());
+        #%union = map {$_ => 1} (exists $elem->{weaponTags} ? @{$elem->{weaponTags}->{li}} : (), exists $data->{weaponTags} ? @{$data->{weaponTags}} : ());
         if (exists $data->{weaponTags})
         {
             $self->__print_patch(<<EOF);
@@ -227,7 +236,7 @@ EOF
 
         # Update verbs node. Don't use Properties in PatchOperationMakeGunCECompatible
         # because we don't want to copy the entire verbs node over.
-        if (exists $entry->{verbs} )
+        if (exists $elem->{verbs} )
         {
             $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">

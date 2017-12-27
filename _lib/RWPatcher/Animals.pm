@@ -89,6 +89,13 @@ my %VERB2TOOL = (
 # - sourcefile  - (string) $source_file_path
 # - cedata      - Combat Extended data for each animal to be patched,
 #                 { [ anim1 => \%data ], ... }
+# - expected_parents => (string/array-ref, optional)
+#                If given, patch only ThingDefs with this ParentName.
+#                If multiple(array-ref), element must match one of the listed ParentName(s).
+#                If not given, patch only defs with defName in cedata.
+#                Specifying parent_thing will identify new entries in source xml that
+#                are not defined in cedata.
+#
 # Example cedata:
 # {
 #     Entelodont => {
@@ -121,32 +128,6 @@ sub new
     return $class->SUPER::new(params => \%params, validator => \%VALIDPARAMS);
 }
 
-# Get/Set expected parent class of animal defs.
-# This is how we determine which defs to patch.
-#
-# For more complex criteria, overwrite is_elem_patchable() method.
-#
-sub expected_parent
-{
-    my($self, $parentname) = @_;
-
-    $self->{expected_parent_class} = $parentname if ($parentname);
-    return $self->{expected_parent_class} || "AnimalThingBase";
-}
-
-# Should this xml child element be patched?
-# Return:
-#   - $defName - yes, patchable
-#   - undef - don't patch
-#
-sub is_elem_patchable
-{
-    my($self, $thiselem) = @_;
-
-    my $defname = $thiselem->{defName};
-    return defined $defname && $thiselem->{ParentName} eq $self->expected_parent() ? $defname : undef;
-}
-
 # Generate patch files for this patcher
 sub generate_patches
 {
@@ -166,20 +147,8 @@ sub generate_patches
     foreach $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
         # Skip non-entities and unknown entities
-        next unless defined( $patchable = $self->is_elem_patchable($elem) );
-
-        if (!exists $self->{cedata}->{$patchable})
-        {
-            $self->__warn(<<EOF);
-WARN: New or unknown entity found. Skipping because no CE data:
-
-Name: $patchable
-Desc:
-$elem->{description}
-
-EOF
-            next;
-        }
+        next unless $self->is_elem_patchable($elem);
+	$patchable = $elem->{defName};
 
         # Start patch
         $self->__print_patch(<<EOF);

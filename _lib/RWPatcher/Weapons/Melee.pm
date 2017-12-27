@@ -48,6 +48,13 @@ my %AP = (
 # - sourcefile - (string) $source_file_path
 # - cedata     - Combat Extended data for each animal to be patched,
 #                { [ anim1 => \%data ], ... }
+# - expected_parents => (string/array-ref, optional)
+#                If given, patch only ThingDefs with this ParentName.
+#                If multiple(array-ref), element must match one of the listed ParentName(s).
+#                If not given, patch only defs with defName in cedata.
+#                Specifying parent_thing will identify new entries in source xml that
+#                are not defined in cedata.
+#
 # Example cedata:
 # {
 #      PJ_Vibroaxe => {
@@ -88,11 +95,14 @@ sub generate_patches
     # Step through source xml.
     # Generate patch for each known defName/weapon in the same order.
     my($weapon, $data, $key, $val, $ref);
-    foreach my $entry ( @{$self->{sourcexml}->{ThingDef}} )
+    foreach my $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
-        next unless exists($entry->{defName}) && exists $self->{cedata}->{$entry->{defName}};
-        $weapon = $entry->{defName};
-        $data = $self->{cedata}->{$entry->{defName}};
+        # Skip non-entities and unknown entities
+        next unless $self->is_elem_patchable($elem);
+	$patchable = $elem->{defName};
+
+        $weapon = $elem->{defName};
+        $data = $self->{cedata}->{$elem->{defName}};
     
         # Add CE bulk
         $self->__print_patch(<<EOF);
@@ -158,9 +168,9 @@ EOF
 
 EOF
         # Add armor penetration to all tools entries
-        if (exists $entry->{tools} && exists $entry->{tools}->{li})
+        if (exists $elem->{tools} && exists $elem->{tools}->{li})
         {
-	    foreach $ref ( @{$entry->{tools}->{li}} )
+	    foreach $ref ( @{$elem->{tools}->{li}} )
 	    {
                 # AP based on capacity (default to a17 value || 0.01)
 	        $key = $ref->{capacities}->{li}->[0];

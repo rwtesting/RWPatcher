@@ -51,6 +51,11 @@ Unzip/Install to Mods folder (creates Mods/_lib/ directory).
             sourcemod  => $NAME_OF_MOD_TO_PATCH,  # e.g. "High Caliber"
             sourcefile => $sourcefile,
             cedata     => \%CEDATA,
+
+            # List ParentName expected for all weapons to be patched.
+            # If not even, only patch weapons listed in %CEDATA.
+            # Example:
+            expected_parents => [ qw(BaseGun AnotherParent) ],
         );
 
         $patcher->generate_patches();
