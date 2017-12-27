@@ -21,12 +21,15 @@ my $VERBCLASS = 'CombatExtended.Verb_ShootCE';
 
 # Constructor
 #
-# Params:
-# - sourcemod  - (string) If given, patch won't apply unless this mod is loaded
-# - sourcefile - (string) $source_file_path
-# - cedata     - Combat Extended data for each weapon to be patched,
-#                { [ weapon1 => \%data ], ... }
-# - expected_parents => (string/array-ref, optional)
+# Required parameters:
+# - sourcefile  - (string) $source_file_paths
+# - cedata      - (hashref) Combat Extended data for each entity to be patched,
+#                 { [ entity1 => \%data ], ... }
+#
+# Optional parameters:
+# - sourcemod  => (string) Don't apply patch unless this mod is loaded.
+# - patchdir   => (string) write patches to this dir (default: auto-use name of immediate parent dir of sourcefile)
+# - expected_parents => (string/array-ref)
 #                If given, patch only ThingDefs with this ParentName.
 #                If multiple(array-ref), element must match one of the listed ParentName(s).
 #                If not given, patch only defs with defName in cedata.

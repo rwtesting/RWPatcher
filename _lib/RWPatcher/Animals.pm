@@ -84,12 +84,15 @@ my %VERB2TOOL = (
 
 # Constructor
 #
-# Params:
-# - sourcemod   - (string) If given, patch won't apply unless this mod is loaded
-# - sourcefile  - (string) $source_file_path
-# - cedata      - Combat Extended data for each animal to be patched,
-#                 { [ anim1 => \%data ], ... }
-# - expected_parents => (string/array-ref, optional)
+# Required parameters:
+# - sourcefile  - (string) $source_file_paths
+# - cedata      - (hashref) Combat Extended data for each entity to be patched,
+#                 { [ entity1 => \%data ], ... }
+#
+# Optional parameters:
+# - sourcemod  => (string) Don't apply patch unless this mod is loaded.
+# - patchdir   => (string) write patches to this dir (default: auto-use name of immediate parent dir of sourcefile)
+# - expected_parents => (string/array-ref)
 #                If given, patch only ThingDefs with this ParentName.
 #                If multiple(array-ref), element must match one of the listed ParentName(s).
 #                If not given, patch only defs with defName in cedata.
@@ -387,21 +390,6 @@ EOF
 #############
 # Utilities #
 #############
-
-# Pre-patch initialization and header
-sub __start_patch
-{
-    my($self) = @_;
-
-    $self->__setup_patch_dir();
-    $self->__info("Source - $self->{sourcefile}");
-    $self->__info("Patch  - " . $self->__init_patchfile($self->{sourcefile}) . "\n");
-    $self->__init_sourcexml($self->{sourcefile});
-
-    $self->__print_patch_header();
-
-    $self->__print_sourcemod_check();
-}
 
 # Determine armor penetration value for this tools node
 sub __get_tool_armor_pen

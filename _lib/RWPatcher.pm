@@ -12,15 +12,9 @@ use IO::File;
 # Parameters:
 # - params    => \%params - child parameters
 # - validator => \%validator - validate params against this. See below example.
-# - expected_parents => (string/array-ref, optional)
-#                If given, patch only ThingDefs with this ParentName.
-#                If multiple(array-ref), element must match one of the listed ParentName(s).
-#                If not given, patch only defs with defName in cedata.
-#                Specifying parent_thing will identify new entries in source xml that
-#                are not defined in cedata.
 #
 # $validator example = {
-#     $paramname1 => {required => 1, type => ""},      # scalar (string/int/etc.)
+#     $paramname1 => {required => 1, type => ""},      # string/int/etc.
 #     $paramname2 => {required => 0, type => "ARRAY"},
 #     $paramname3 => {required => 0, type => "HASH"},
 # }
@@ -29,7 +23,16 @@ use IO::File;
 # - sourcefile  - (string) $source_file_paths
 # - cedata      - (hashref) Combat Extended data for each entity to be patched,
 #                 { [ entity1 => \%data ], ... }
-# - sourcemod   - (optional/string) If given, patch won't apply unless this mod is loaded
+#
+# Optional child parameters:
+# - sourcemod  => (string) Don't apply patch unless this mod is loaded.
+# - patchdir   => (string) write patches to this dir (default: auto-use name of immediate parent dir of sourcefile)
+# - expected_parents => (string/array-ref)
+#                If given, patch only ThingDefs with this ParentName.
+#                If multiple(array-ref), element must match one of the listed ParentName(s).
+#                If not given, patch only defs with defName in cedata.
+#                Specifying parent_thing will identify new entries in source xml that
+#                are not defined in cedata.
 #
 # The format of cedata depends on the child and is validated against \%validator.
 #
@@ -56,6 +59,17 @@ sub new
     {
         $self->__warn("new: cedata parameter is missing or is not a hash (got ".ref($params->{cedata}).")");
 	++$errcount;
+    }
+
+    # Verify - optional strings
+    my $param;
+    foreach $param (qw(sourcemod patchdir))
+    {
+        if (defined $params->{$param} && ref($params->{$param}) ne '')
+        {
+            $self->__warn("new: $param parameter is not a string (got ".ref($params->{$param}).")");
+    	    ++$errcount;
+        }
     }
 
     # Verify - $expected_parents || \@expected_parents
@@ -85,6 +99,14 @@ sub new
         }
     }
 
+    # If any fields are required, then we will require a cedata entry for all patches
+    #$self->{__validator} = $validator;
+    $self->{__patches_require_cedata} = 0;
+    while ( !$self->{__patches_require_cedata} && ((undef, $valid) = each %$validator) )
+    {
+        $self->{__patches_require_cedata} = 1 if $valid->{required};
+    }
+
     # Exception if invalid
     if ($errcount > 0)
     {
@@ -94,7 +116,8 @@ sub new
     # Valid - Init
     $self->{sourcefile} = $params->{sourcefile};
     $self->{cedata}     = $params->{cedata};
-    $self->{sourcemod}  = $params->{sourcemod} if exists $params->{sourcemod};
+    $self->{sourcemod}  = $params->{sourcemod} if defined $params->{sourcemod};
+    $self->{patchdir}   = $params->{patchdir}  if defined $params->{patchdir};
     $self->expected_parents($params->{expected_parents}) if $params->{expected_parents};
     return $self;
 }
@@ -130,7 +153,7 @@ sub is_elem_patchable
         if ($self->is_expected_parent($thiselem->{ParentName}))
 	{
 	    # Warn user to update cedata for new patchable elements found in source mod
-	    if (!defined $self->{cedata}->{$defname})
+	    if (!defined $self->{cedata}->{$defname} && $self->{__patches_require_cedata})
 	    {
 	        $self->__warn("New entity found: $defname (Skipping - Please add CE DATA).");
 	        return 0;
@@ -164,7 +187,8 @@ sub is_elem_patchable
 sub is_expected_parent
 {
     my($self, $parentname) = @_;
-    return defined $parentname && exists $self->expected_parents()->{$parentname} ? 1 : 0;
+    $parentname = "" unless defined $parentname;
+    return exists $self->expected_parents()->{$parentname} ? 1 : 0;
 }
 
 # This object checks vs parents (else only checks vs cedata)
@@ -214,7 +238,6 @@ sub __start_patch
 {
     my($self) = @_;
 
-    $self->__setup_patch_dir();
     $self->__info("Source - $self->{sourcefile}");
     $self->__info("Patch  - " . $self->__init_patchfile() . "\n");
     $self->__init_sourcexml($self->{sourcefile});
@@ -226,35 +249,11 @@ sub __start_patch
     return 1;
 }
 
-# Given a source mod file to be patched, setup the target patch directory.
-#
-# Ex: Source = ../../SourceModName/ThingDefs_Races/File.xml
-#     Patch  = ./ThingDefsRaces/File.xml
-# So we need to create the ThingDefRaces dir if it doesn't exist.
-#
-sub __setup_patch_dir
-{
-    my($self) = @_;
-
-    my  $outdir = basename(dirname($self->{sourcefile}));
-    if (! -e $outdir)
-    {
-        mkdir($outdir) or $self->__die("mkdir $outdir: $!");
-    }
-    elsif (! -d $outdir)
-    {
-        $self->__die("Output dir $outdir exists but is not a directory.");
-    }
-    # If file is in current dir ".", then $outdir = ".." above and passes without error
-
-    return 1; # success
-}
-
 # Given a file name, init the xml object to parse
 sub __init_sourcexml
 {
     my($self, $filename) = @_;
-    $self->{sourcexml} =  XMLin($filename, ForceArray => [qw(ThingDef li)])
+    $self->{sourcexml} =  XMLin($filename, ForceArray => [qw(ThingDef PawnKindDef li)])
         or $self->__die("read source xml $filename: $!\n");
     return $self->{sourcexml};
 }
@@ -274,12 +273,38 @@ sub __init_patchfile
     my $sourcefile = $self->{sourcefile};
     $sourcefile =~ s/(?:-REF)?\.txt/.xml/;
 
-    $self->{patchfile} = basename(dirname($sourcefile)) . "/" . basename($sourcefile);
+    my $patchdir = $self->{patchdir} || basename(dirname($sourcefile));
+    $self->__setup_patch_dir($patchdir);
+
+    $self->{patchfile} = $patchdir . "/" . basename($sourcefile);
     #open($self->{patchfh}, ">", $self->{patchfile})
     $self->{patchfh} = new IO::File(">" . $self->{patchfile})
         or $self->__die("Failed to open/write $self->{patchfile}: $!\n");
 
     return $self->{patchfile};
+}
+
+# Given a source mod file to be patched, setup the target patch directory.
+#
+# Ex: Source = ../../SourceModName/ThingDefs_Races/File.xml
+#     Patch  = ./ThingDefsRaces/File.xml
+# So we need to create the ThingDefRaces dir if it doesn't exist.
+#
+sub __setup_patch_dir
+{
+    my($self, $patchdir) = @_;
+
+    if (! -e $patchdir)
+    {
+        mkdir($patchdir) or $self->__die("mkdir $patchdir: $!");
+    }
+    elsif (! -d $patchdir)
+    {
+        $self->__die("Output dir $patchdir exists but is not a directory.");
+    }
+    # If file is in current dir ".", then $patchdir = ".." above and passes without error
+
+    return 1; # success
 }
 
 #########################
