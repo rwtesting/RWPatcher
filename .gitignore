@@ -1,0 +1,8 @@
+*.o
+*.zip
+*.tar.gz
+*.suo
+*.cache
+Thumbs.db
+*.txt
+*/_test

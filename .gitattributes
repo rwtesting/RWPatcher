@@ -1,0 +1,22 @@
+# Release exclusions
+Source/ export-ignore
+*.pl export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+
+# Diff exclusions
+*.png diff=nodiff
+*.jpb diff=nodiff
+*.gif diff=nodiff
+*.ttf diff=nodiff
+*.woff diff=nodiff
+*.eot diff=nodiff
+*.svg diff=nodiff
+*.swf diff=nodiff
+*.fla diff=nodiff
+*.m4v diff=nodiff
+*.flv diff=nodiff
+*.ogv diff=nodiff
+*.webm diff=nodiff
+*.mp4 diff=nodiff
+*.mp3 diff=nodiff
