@@ -44,11 +44,15 @@ Unzip/Install to Mods folder (creates Mods/_lib/ directory).
 
     );
 
-    my $patcher = new RWPatcher::Weapons::Ranged(
-        sourcemod   => $NAME_OF_MOD_TO_PATCH,  # e.g. "High Caliber"
-        sourcefiles => \@SOURCEFILES,
-        cedata      => \%CEDATA,
-    );
+    my $patcher;
+    foreach my $sourcefile (@SOURCEFILE)
+    {
+        $patcher = new RWPatcher::Weapons::Ranged(
+            sourcemod  => $NAME_OF_MOD_TO_PATCH,  # e.g. "High Caliber"
+            sourcefile => $sourcefile,
+            cedata     => \%CEDATA,
+        );
 
-    $patcher->generate_patches();
+        $patcher->generate_patches();
+    }
 

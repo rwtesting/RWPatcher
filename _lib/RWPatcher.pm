@@ -21,8 +21,8 @@ use IO::File;
 # }
 #
 # Expected child parameters:
-# - sourcefiles - \@source_file_paths
-# - cedata      - Combat Extended data for each entity to be patched,
+# - sourcefile  - (string) $source_file_paths
+# - cedata      - (hashref) Combat Extended data for each entity to be patched,
 #                 { [ entity1 => \%data ], ... }
 # - sourcemod   - (optional/string) If given, patch won't apply unless this mod is loaded
 #
@@ -39,10 +39,10 @@ sub new
     my $params = $params{params} or $self->__die("new(): Missing parameter: params");
     my $validator = $params{validator} or $self->__die("new(): Missing parameter: validator");
 
-    # Verify - \@sourcefiles
-    if (!$params->{sourcefiles} || ref($params->{sourcefiles}) ne 'ARRAY')
+    # Verify - \@sourcefile
+    if (!$params->{sourcefile} || ref($params->{sourcefile}) ne '')
     {
-        $self->__warn("new: sourcefiles parameter is missing or is not an array");
+        $self->__warn("new: sourcefile parameter is missing or is not a string");
 	++$errcount;
     }
 
@@ -80,37 +80,65 @@ sub new
     }
 
     # Valid - Init
-    $self->{sourcefiles} = $params->{sourcefiles};
-    $self->{cedata}      = $params->{cedata};
-    $self->{sourcemod}   = $params->{sourcemod} if exists $params->{sourcemod};
+    $self->{sourcefile} = $params->{sourcefile};
+    $self->{cedata}     = $params->{cedata};
+    $self->{sourcemod}  = $params->{sourcemod} if exists $params->{sourcemod};
     return $self;
 }
 
-# Given a set of source mod files to be patched, setup the target patch directories.
-# Do this for all source files at once before patching anything.
+# Print to patch file
+sub __print_patch
+{
+    my($self, @msg) = @_;
+    if ($self->{patchfh})
+    {
+        $self->{patchfh}->print(@msg);
+    }
+    else
+    {
+        print(@msg);
+    }
+}
+
+# Patch Init/Setup
+
+# Pre-patch initialization and header
+sub __start_patch
+{
+    my($self) = @_;
+
+    $self->__setup_patch_dir();
+    $self->__info("Source - $self->{sourcefile}");
+    $self->__info("Patch  - " . $self->__init_patchfile() . "\n");
+    $self->__init_sourcexml($self->{sourcefile});
+
+    $self->__print_patch_header();
+
+    $self->__print_sourcemod_check();
+
+    return 1;
+}
+
+# Given a source mod file to be patched, setup the target patch directory.
 #
 # Ex: Source = ../../SourceModName/ThingDefs_Races/File.xml
 #     Patch  = ./ThingDefsRaces/File.xml
 # So we need to create the ThingDefRaces dir if it doesn't exist.
 #
-sub __setup_patch_dirs
+sub __setup_patch_dir
 {
     my($self) = @_;
 
-    my($sourcefile, $outdir);
-    foreach $sourcefile (@{$self->{sourcefiles}})
+    my  $outdir = basename(dirname($self->{sourcefile}));
+    if (! -e $outdir)
     {
-        $outdir = basename(dirname($sourcefile));
-        if (! -e $outdir)
-        {
-            mkdir($outdir) or $self->__die("mkdir $outdir: $!");
-        }
-        elsif (! -d $outdir)
-        {
-            $self->__die("Output dir $outdir exists but is not a directory.");
-        }
-	# If file is in current dir ".", then $outdir = ".." above and passes without error
+        mkdir($outdir) or $self->__die("mkdir $outdir: $!");
     }
+    elsif (! -d $outdir)
+    {
+        $self->__die("Output dir $outdir exists but is not a directory.");
+    }
+    # If file is in current dir ".", then $outdir = ".." above and passes without error
 
     return 1; # success
 }
@@ -134,7 +162,9 @@ sub __init_sourcexml
 #
 sub __init_patchfile
 {
-    my($self, $sourcefile) = @_;
+    my($self) = @_;
+
+    my $sourcefile = $self->{sourcefile};
     $sourcefile =~ s/(?:-REF)?\.txt/.xml/;
 
     $self->{patchfile} = basename(dirname($sourcefile)) . "/" . basename($sourcefile);
@@ -143,26 +173,6 @@ sub __init_patchfile
         or $self->__die("Failed to open/write $self->{patchfile}: $!\n");
 
     return $self->{patchfile};
-}
-
-# Print to patch file
-sub __print_patch
-{
-    my($self, @msg) = @_;
-    if ($self->{patchfh})
-    {
-        $self->{patchfh}->print(@msg);
-    }
-    else
-    {
-        print(@msg);
-    }
-}
-
-sub __close_patchfile
-{
-    my($self) = @_;
-    $self->{patchfh} && $self->{patchfh}->close() || $self->__warn("close $self->{patchfile}: $!");
 }
 
 # Common patch contents
@@ -184,19 +194,6 @@ sub __print_patch_header
 EOF
 }
 
-sub __print_patch_closer
-{
-    my($self) = @_;
-
-    $self->__print_patch(<<EOF);
-  </operations>  <!-- end sequence -->
-  </Operation>   <!-- end sequence -->
-
-</Patch>
-
-EOF
-}
-
 sub __print_sourcemod_check
 {
     my($self) = @_;
@@ -210,6 +207,34 @@ sub __print_sourcemod_check
 
 EOF
     }
+}
+
+# Patch Finish/Cleanup
+sub __end_patch
+{
+    my($self) = @_;
+
+    $self->__print_patch_closer();
+    $self->__close_patchfile();
+}
+
+sub __print_patch_closer
+{
+    my($self) = @_;
+
+    $self->__print_patch(<<EOF);
+  </operations>  <!-- end sequence -->
+  </Operation>   <!-- end sequence -->
+
+</Patch>
+
+EOF
+}
+
+sub __close_patchfile
+{
+    my($self) = @_;
+    $self->{patchfh} && $self->{patchfh}->close() || $self->__warn("close $self->{patchfile}: $!");
 }
 
 # Messages

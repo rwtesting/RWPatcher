@@ -22,10 +22,10 @@ my $VERBCLASS = 'CombatExtended.Verb_ShootCE';
 # Constructor
 #
 # Params:
-# - sourcemod   - (string) If given, patch won't apply unless this mod is loaded
-# - sourcefiles - \@source_file_paths
-# - cedata      - Combat Extended data for each weapon to be patched,
-#                 { [ weapon1 => \%data ], ... }
+# - sourcemod  - (string) If given, patch won't apply unless this mod is loaded
+# - sourcefile - (string) $source_file_path
+# - cedata     - Combat Extended data for each weapon to be patched,
+#                { [ weapon1 => \%data ], ... }
 #
 # Throw exception on error.
 #
@@ -82,21 +82,7 @@ sub generate_patches
 {
     my($self) = @_;
 
-    # Make sure output dirs are created before trying to write any patches
-    $self->__setup_patch_dirs();
-
-    # Patch each source file
-    foreach $sourcefile (@{$self->{sourcefiles}})
-    {
-
-    # Open source/output files
-    $self->__info("Source - $sourcefile");
-    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile));
-    $self->__init_sourcexml($sourcefile);
-
-    $self->__print_patch_header();
-
-    $self->__print_sourcemod_check();
+    $self->__start_patch();
 
     # Step through source xml.
     # Generate patch for each known defName/weapon in the same order.
@@ -269,13 +255,10 @@ EOF
     }
 
     # Closer
-    $self->__print_patch_closer();
-    $self->__close_patchfile();
-
-    }  # end foreach sourcefiles
+    $self->__end_patch();
 
     return 1; # success
-}      # end generate_patches()
+}
 
 1;
 

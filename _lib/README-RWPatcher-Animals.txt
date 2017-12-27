@@ -27,11 +27,15 @@ Unzip/Install to Mods folder (creates Mods/_lib/ directory).
 
     );
 
-    my $patcher = new RWPatcher::Animals(
-        sourcemod   => $NAME_OF_MOD_TO_PATCH,  # e.g. "Dinosauria"
-        sourcefiles => \@SOURCEFILES,
-        cedata      => \%CEDATA,
-    );
+    my $patcher;
+    foreach my $sourcefile (@SOURCEFILES)
+    {
+        $patcher = new RWPatcher::Animals(
+            sourcemod  => $NAME_OF_MOD_TO_PATCH,  # e.g. "Dinosauria"
+            sourcefile => $sourcefile,
+            cedata     => \%CEDATA,
+        );
 
-    $patcher->generate_patches();
+        $patcher->generate_patches();
+    }
 

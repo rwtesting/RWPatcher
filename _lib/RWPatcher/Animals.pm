@@ -86,7 +86,7 @@ my %VERB2TOOL = (
 #
 # Params:
 # - sourcemod   - (string) If given, patch won't apply unless this mod is loaded
-# - sourcefiles - \@source_file_paths
+# - sourcefile  - (string) $source_file_path
 # - cedata      - Combat Extended data for each animal to be patched,
 #                 { [ anim1 => \%data ], ... }
 # Example cedata:
@@ -152,23 +152,8 @@ sub generate_patches
 {
     my($self) = @_;
 
-
-    # Make sure output dirs are created before trying to write any patches
-    $self->__setup_patch_dirs();
-
-    # Patch each source file
-    my($elem, $patchable, $verb, $tool, $tag, $val, $key);
-    foreach my $sourcefile (@{$self->{sourcefiles}})
-    {
-
-    # Open source/output files
-    $self->__info("Source - $sourcefile");
-    $self->__info("Patch  - " . $self->__init_patchfile($sourcefile) . "\n");
-    $self->__init_sourcexml($sourcefile);
-
-    $self->__print_patch_header();
-
-    $self->__print_sourcemod_check();
+    # Init and Header
+    $self->__start_patch();
 
     # Step through source xml.
     # Generate a template for each $patchable found.
@@ -424,18 +409,30 @@ EOF
     }
 
     # Closer
-    $self->__print_patch_closer();
-    $self->__close_patchfile();
-
-    }  # end foreach source file
+    $self->__end_patch();
 
     return 1; # success
-}  # end generate_patches()
+}
 
 
 #############
 # Utilities #
 #############
+
+# Pre-patch initialization and header
+sub __start_patch
+{
+    my($self) = @_;
+
+    $self->__setup_patch_dir();
+    $self->__info("Source - $self->{sourcefile}");
+    $self->__info("Patch  - " . $self->__init_patchfile($self->{sourcefile}) . "\n");
+    $self->__init_sourcexml($self->{sourcefile});
+
+    $self->__print_patch_header();
+
+    $self->__print_sourcemod_check();
+}
 
 # Determine armor penetration value for this tools node
 sub __get_tool_armor_pen
