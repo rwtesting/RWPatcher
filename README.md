@@ -1,6 +1,7 @@
 Common libraries for patching different types of Rimworld mod files.
 
-Unzip to Mods directory (creates _lib/ directory).
+Unzip to a directory (creates _lib/ directory).
+    use lib "path-to-directory/_lib";
 
 For usage, see individual README files under _lib/.
 

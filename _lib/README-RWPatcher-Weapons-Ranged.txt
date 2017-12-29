@@ -3,7 +3,7 @@ given specific CE values for each weapon.
 
 Unzip/Install to Mods folder (creates Mods/_lib/ directory).
 
-    use lib "PATH-TO-Mods-DIR/_lib";
+    use lib "path-to-lib-dir/_lib";
     use RWPatcher::Weapons::Melee;
 
     my @SOURCEFILES = qw(
