@@ -311,18 +311,6 @@ EOF
 
 EOF
 
-	        # HACK: temp remove surpriseattack stun nodes - CE v0.18.0.2 beta
-	        # throws parry / armor pen error here (null object).
-	        if (exists $tool->{surpriseAttack})
-	        {
-                    $self->__print_patch(<<EOF);
-    <!-- HACK: temporarily remove stun nodes to prevent CE v0.18.0.2 beta null object error -->
-    <li Class="PatchOperationRemove">
-    <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]/surpriseAttack</xpath>
-    </li>
-
-EOF
-	        }
             }
         }
 
