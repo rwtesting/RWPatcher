@@ -81,7 +81,7 @@ sub new
 
     # For each cedata entry, check for required parameters and validate parameter types
     # Any unexpected keys in cedata are ignored, no warning.
-    my($entity, $data, $param, $valid);
+    my($entity, $data, $valid);
     while ( ($entity,$data) = each %{$params->{cedata}} )
     {
         while ( ($param, $valid) = each %$validator )
