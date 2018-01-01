@@ -27,6 +27,7 @@ use IO::File;
 # Optional child parameters:
 # - sourcemod  => (string) Don't apply patch unless this mod is loaded.
 # - patchdir   => (string) write patches to this dir (default: auto-use name of immediate parent dir of sourcefile)
+# - base_node_name => (string) Name of base node to parse (default "ThingDef")
 # - expected_parents => (string/array-ref)
 #                If given, patch only ThingDefs with this ParentName.
 #                If multiple(array-ref), element must match one of the listed ParentName(s).
@@ -63,7 +64,7 @@ sub new
 
     # Verify - optional strings
     my $param;
-    foreach $param (qw(sourcemod patchdir))
+    foreach $param (qw(sourcemod patchdir base_node_name))
     {
         if (defined $params->{$param} && ref($params->{$param}) ne '')
         {
@@ -118,6 +119,7 @@ sub new
     $self->{cedata}     = $params->{cedata};
     $self->{sourcemod}  = $params->{sourcemod} if defined $params->{sourcemod};
     $self->{patchdir}   = $params->{patchdir}  if defined $params->{patchdir};
+    $self->base_node_name($params->{base_node_name}) if $params->{base_node_name};
     $self->expected_parents($params->{expected_parents}) if $params->{expected_parents};
     return $self;
 }
@@ -178,6 +180,14 @@ sub is_elem_patchable
 
     # Don't patch
     return 0;
+}
+
+# Get/Set name of base node to parse (ThingDef, PawnKindDef, etc.)
+sub base_node_name
+{
+    my($self, $name) = @_;
+    $self->{base_node_name} = $name if defined $name;
+    return $self->{base_node_name} || "ThingDef";
 }
 
 # XML element matches one of the expected ParentName's (and should be patched)
@@ -253,7 +263,7 @@ sub __start_patch
 sub __init_sourcexml
 {
     my($self, $filename) = @_;
-    $self->{sourcexml} =  XMLin($filename, ForceArray => [qw(ThingDef PawnKindDef li)])
+    $self->{sourcexml} =  XMLin($filename, ForceArray => [$self->base_node_name(), "li"])
         or $self->__die("read source xml $filename: $!\n");
     return $self->{sourcexml};
 }
@@ -341,6 +351,17 @@ sub __print_sourcemod_check
 
 EOF
     }
+}
+
+sub __print_element_header
+{
+    my($self, $header) = @_;
+
+        # Start patch
+        $self->__print_patch(<<EOF);
+    <!-- ========== $header ========== -->
+
+EOF
 }
 
 ################

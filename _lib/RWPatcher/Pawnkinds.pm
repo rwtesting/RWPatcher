@@ -68,6 +68,7 @@ sub new
 
     $self->{AmmoMin} = $params{AmmoMin} if defined $params{AmmoMin};
     $self->{AmmoMax} = $params{AmmoMax} if defined $params{AmmoMax};
+    $self->base_node_name("PawnKindDef");
 
     return $self;
 }

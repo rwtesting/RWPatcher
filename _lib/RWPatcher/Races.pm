@@ -1,4 +1,4 @@
-package RWPatcher::Animals;
+package RWPatcher::Races;
 
 # Generate patch files for animal mod file(s) (e.g. Dinosauria).
 
@@ -8,26 +8,28 @@ use parent "RWPatcher";
 # Source file name format:
 # For each, patch file will be ./<base-dir-name>/<file.xml>
 # Source may end with (-REF)?.(txt|xml), which will be replaced with ".xml".
-#   e.g. Source = my-path/Races/Dinosauria.xml
-#        Patch  = ./Races/Dinosauria.xml
 
-# DEFAULT values not in source xml from Dinosauria
-my %DEFAULT = (
-    bodyShape => "Quadruped",
+###########################
+# CLASS CONSTANTS (no my) #
+###########################
+
+# DEFAULT values not in source xml
+%DEFAULT = (
+    bodyShape => "Humanoid",
     #MeleeDodgeChance => 0.08,	# Elephant
     #MeleeCritChance  => 0.79,	# Elephant
 );
 
 # Armor types to check (if not defined, don't patch - fallback to source mod values).
-my @ARMORTYPES = qw(ArmorRating_Blunt ArmorRating_Sharp);
+@ARMORTYPES = qw(ArmorRating_Blunt ArmorRating_Sharp);
 
 # Armor penetration per bodypart
 #
 # TODO: Simplify this by approximating all AP by capacity, ignore bodypartgroup,
 #       and allow caller/child to specify exceptions per entity+bodypart+capacity.
 #
-my $DEFAULT_AP = 0.15;  # default ap for unlisted bodyparts/capacities
-my %TOOLAP = (
+$DEFAULT_AP = 0.15;  # default ap for unlisted bodyparts/capacities
+%TOOLAP = (
     HeadAttackTool => { Blunt => 0.133, Scratch => 0.077 },  # Elephant
     TailAttackTool => { Blunt => 0.17, Scratch => 0.077 },   # (like a leg?)
 
@@ -64,6 +66,9 @@ $TOOLAP{RightArmClawAttackTool} = $TOOLAP{LeftArmClawAttackTool};
 $TOOLAP{FrontRightClaws} = $TOOLAP{FrontLeftClaws};
 $TOOLAP{RightBlade} = $TOOLAP{LeftBlade};
 
+$TOOLAP{LeftHandClawsGroup} = $TOOLAP{FrontLeftClaws};
+$TOOLAP{RightHandClawsGroup} = $TOOLAP{LeftHandClawsGroup};
+
 # Megafauna typos
 $TOOLAP{TailWeapon} = $TOOLAP{TailAttackTool};
 $TOOLAP{FeetGroup}  = $TOOLAP{Feet};
@@ -82,54 +87,7 @@ my %VERB2TOOL = (
        #commonality          => "commonality",
 );
 
-# Constructor
-#
-# Required parameters:
-# - sourcefile  - (string) $source_file_paths
-# - cedata      - (hashref) Combat Extended data for each entity to be patched,
-#                 { [ entity1 => \%data ], ... }
-#
-# Optional parameters:
-# - sourcemod  => (string) Don't apply patch unless this mod is loaded.
-# - patchdir   => (string) write patches to this dir (default: auto-use name of immediate parent dir of sourcefile)
-# - expected_parents => (string/array-ref)
-#                If given, patch only ThingDefs with this ParentName.
-#                If multiple(array-ref), element must match one of the listed ParentName(s).
-#                If not given, patch only defs with defName in cedata.
-#                Specifying parent_thing will identify new entries in source xml that
-#                are not defined in cedata.
-#
-# Example cedata:
-# {
-#     Entelodont => {
-#         MeleeDodgeChance  => 0.2,		# required
-#         MeleeCritChance   => 0.5,		# required
-#         ArmorRating_Blunt => 0.1,		# optional
-#         ArmorRating_Sharp => 0.125,		# optional
-# 	  bodyShape         => "Quadruped",	# optional
-# 	  baseHealthScale   => 7,		# optional
-#     },
-#     ...
-# }
-#
-# Throw exception on error.
-#     
-sub new
-{
-    my($class, %params) = @_;
-
-    my %VALIDPARAMS = (
-        MeleeDodgeChance  => { required => 1, type => "" },
-        MeleeCritChance   => { required => 1, type => "" },
-        ArmorRating_Blunt => { required => 0, type => "" },
-        ArmorRating_Sharp => { required => 0, type => "" },
-        bodyShape         => { required => 0, type => "" },
-        baseHealthScale   => { required => 0, type => "" },
-    );
-
-    # Base handles parameter validation + initialization
-    return $class->SUPER::new(params => \%params, validator => \%VALIDPARAMS);
-}
+# Constructor - use parent
 
 # Generate patch files for this patcher
 sub generate_patches
@@ -145,25 +103,21 @@ sub generate_patches
     #
     # Perf:
     # - Use one sequence per file to reduce load times, short circuit.
-    # - Load times: Defs/ThingDef < /Defs/ThingDef << */ThingDef/ <<< //ThingDef/
+    # - Load times: Defs/ThingDef < Defs/ThingDef << */ThingDef/ <<< //ThingDef/
     #
-    foreach $elem ( @{$self->{sourcexml}->{ThingDef}} )
+    my $basenode = $self->base_node_name();
+    foreach $elem ( @{$self->{sourcexml}->{$basenode}} )
     {
         # Skip non-entities and unknown entities
         next unless $self->is_elem_patchable($elem);
 	$patchable = $elem->{defName};
-
-        # Start patch
-        $self->__print_patch(<<EOF);
-    <!-- ========== $patchable ========== -->
-
-EOF
+	$self->__print_element_header($patchable);
 
         # Add bodyShape
         $val = $self->{cedata}->{$patchable}->{bodyShape} || $DEFAULT{bodyShape};
         $self->__print_patch(<<EOF);
     <li Class="PatchOperationAddModExtension">
-    <xpath>Defs/ThingDef[defName="$patchable"]</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]</xpath>
     <value>
         <li Class="CombatExtended.RacePropertiesExtensionCE">
             <bodyShape>$val</bodyShape>
@@ -173,9 +127,12 @@ EOF
 
 EOF
 
+	# Insert from child
+	$self->__generate_patches_first($elem);
+
 	# Element defines "verbs" (pre-b18).
 	# Convert these to "tools" nodes and remove the old verbs nodes (else CE errors).
-        if ($elem->{verbs}->{li})
+        if (ref(eval{$elem->{verbs}->{li}}) eq 'ARRAY')
 	{
 	    $self->__print_patch(<<EOF);
     <!-- Patch $patchable : Verbs (convert to tools) -->
@@ -185,11 +142,11 @@ EOF
     <success>Always</success>
     <operations>
         <li Class="PatchOperationTest">
-        <xpath>/Defs/ThingDef[defName="$patchable"]/tools</xpath>
+        <xpath>Defs/${basenode}[defName="$patchable"]/tools</xpath>
             <success>Invert</success>
         </li>
         <li Class="PatchOperationAdd">
-        <xpath>/Defs/ThingDef[defName="$patchable"]</xpath>
+        <xpath>Defs/${basenode}[defName="$patchable"]</xpath>
             <value>
                 <tools />
             </value>
@@ -199,7 +156,7 @@ EOF
 
     <!-- Convert old verbs to new tools nodes -->
     <li Class="PatchOperationAdd">
-    <xpath>Defs/ThingDef[defName="$patchable"]/tools</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]/tools</xpath>
     <value>
 EOF
 	    # Step through verb fields in source xml
@@ -268,7 +225,7 @@ EOF
 
     <!-- Delete old verbs node (causes CE errors) -->
     <li Class="PatchOperationRemove">
-    <xpath>Defs/ThingDef[defName="$patchable"]/verbs</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]/verbs</xpath>
     </li>
 
 EOF
@@ -297,13 +254,13 @@ EOF
 	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup";
                 $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">
-    <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
         <attribute>Class</attribute>
         <value>CombatExtended.ToolCE</value>
     </li>
 
     <li Class="PatchOperationAdd">
-    <xpath>Defs/ThingDef[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
     <value>
         <armorPenetration>$val</armorPenetration>
     </value>
@@ -326,7 +283,7 @@ EOF
             $self->__print_patch(<<EOF);
 
     <li Class="PatchOperationReplace">
-    <xpath>Defs/ThingDef[defName="$patchable"]/race/baseHealthScale</xpath>
+    <xpath>Defs/${basenode}[defName="$patchable"]/race/baseHealthScale</xpath>
     <value>
         <baseHealthScale>$self->{cedata}->{$patchable}->{baseHealthScale}</baseHealthScale>
     </value>
@@ -336,19 +293,9 @@ EOF
         }
 
 
-        # statBases: Dodge / Crit
-        $val = <<EOF;
-    <!-- Patch statBases last so that we know all previous sequence entries succeeded.
-         These values are easy to check in-game. -->
-    <li Class="PatchOperationAdd">
-    <xpath>Defs/ThingDef[defName="$patchable"]/statBases</xpath>
-    <value>
-        <MeleeDodgeChance>$self->{cedata}->{$patchable}->{MeleeDodgeChance}</MeleeDodgeChance>
-        <MeleeCritChance>$self->{cedata}->{$patchable}->{MeleeCritChance}</MeleeCritChance>
-EOF
-
-        # statBases: armor values (if undefined, fallback to core)
-        foreach $tag (@ARMORTYPES)
+        # statBases: dodge, crit, armor values (if undefined, fallback to core)
+	$val = "";
+        foreach $tag (qw(MeleeDodgeChance MeleeCritChance), @ARMORTYPES)
         {
             if (exists $self->{cedata}->{$patchable}->{$tag})
 	    {
@@ -359,19 +306,42 @@ EOF
         }
 
         # Add all (defined) statBases
-        $self->__print_patch(<<EOF);
+	if ($val =~ /\S/)
+	{
+            $self->__print_patch(<<EOF);
+    <!-- Patch statBases last so that we know all previous sequence entries succeeded.
+         These values are easy to check in-game. -->
+
+    <li Class="PatchOperationAdd">
+    <xpath>Defs/${basenode}[defName="$patchable"]/statBases</xpath>
+    <value>
 $val
     </value>
     </li>
 
 EOF
+	}
 
+	# Insert from child
+	$self->__generate_patches_last($elem);
     }
 
     # Closer
     $self->__end_patch();
 
     return 1; # success
+}
+
+sub __generate_patches_first
+{
+   my($self, $curelem) = @_;  # $curelem is the $elem from the source xml that we're processing
+   ## Let child insert patches first in sequence
+}
+
+sub __generate_patches_last
+{
+   my($self, $curelem) = @_;  # $curelem is the $elem from the source xml that we're processing
+   ## Let child insert patches last in sequence
 }
 
 

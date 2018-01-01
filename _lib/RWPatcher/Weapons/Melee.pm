@@ -75,6 +75,7 @@ my %AP = (
 sub new
 {
     my($class, %params) = @_;
+    $params{base_node_name} = "ThingDef";
 
     my %VALIDPARAMS = (
         Bulk		 => { required => 1, type => "" },

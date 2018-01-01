@@ -69,6 +69,7 @@ my $VERBCLASS = 'CombatExtended.Verb_ShootCE';
 sub new
 {
     my($class, %params) = @_;
+    $params{base_node_name} = "ThingDef";
 
     # Expected parameters
     my %VALIDPARAMS = (
