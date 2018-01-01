@@ -98,23 +98,22 @@ sub generate_patches
 
     # Step through source xml.
     # Generate patch for each known defName/weapon in the same order.
-    my($weapon, $data, $key, $val, $ref);
+    my($nametag, $xpathname, $data, $key, $val, $ref);
     foreach my $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
         # Skip non-entities and unknown entities
         next unless $self->is_elem_patchable($elem);
-	$patchable = $elem->{defName};
-
-        $weapon = $elem->{defName};
-        $data = $self->{cedata}->{$elem->{defName}};
+	$nametag = $self->__nametag($elem);
+	$xpathname = $self->__xpathname($elem);
+        $data = $self->{cedata}->{$nametag};
     
         # Add CE bulk
         $self->__print_patch(<<EOF);
 
-        <!-- ========== $weapon ========== -->
+        <!-- ========== $nametag ========== -->
 
 	<li Class="PatchOperationAdd">
-	    <xpath>Defs/ThingDef[defName="$weapon"]/statBases</xpath>
+	    <xpath>Defs/ThingDef[$xpathname]/statBases</xpath>
 	    <value>
                 <Bulk>$data->{Bulk}</Bulk>
 	    </value>
@@ -131,11 +130,11 @@ EOF
   	<success>Always</success>
   	<operations>
     	    <li Class="PatchOperationTest">
-      	        <xpath>Defs/ThingDef[defName="$weapon"]/weaponTags</xpath>
+      	        <xpath>Defs/ThingDef[$xpathname]/weaponTags</xpath>
       	        <success>Invert</success>
     	    </li>
     	    <li Class="PatchOperationAdd">
-      	        <xpath>Defs/ThingDef[defName="$weapon"]</xpath>
+      	        <xpath>Defs/ThingDef[$xpathname]</xpath>
       	            <value>
         	        <weaponTags />
       	            </value>
@@ -144,7 +143,7 @@ EOF
 	</li>
 
 	<li Class="PatchOperationAdd">
-	    <xpath>Defs/ThingDef[defName="$weapon"]/weaponTags</xpath>
+	    <xpath>Defs/ThingDef[$xpathname]/weaponTags</xpath>
 	    <value>
 EOF
             foreach $key (@{$data->{weaponTags}})
@@ -165,7 +164,7 @@ EOF
         $self->__print_patch(<<EOF);
 	<!-- Add CE attribute to all tools entries -->
 	<li Class="PatchOperationAttributeSet">
-	    <xpath>Defs/ThingDef[defName="$weapon"]/tools/li</xpath>
+	    <xpath>Defs/ThingDef[$xpathname]/tools/li</xpath>
 	    <attribute>Class</attribute>
 	    <value>CombatExtended.ToolCE</value>
 	</li>
@@ -181,7 +180,7 @@ EOF
 	        $val = $key && $AP{$key} ? $AP{$key} : ($data->{armorPenetration} || 0);
                 $self->__print_patch(<<EOF);
 	<li Class="PatchOperationAdd">
-	    <xpath>Defs/ThingDef[defName="$weapon"]/tools/li[label="$ref->{label}"]</xpath>
+	    <xpath>Defs/ThingDef[$xpathname]/tools/li[label="$ref->{label}"]</xpath>
 	    <value>
 		<armorPenetration>$val</armorPenetration>
 	    </value>
@@ -206,7 +205,7 @@ EOF
 	    $self->__print_patch(<<EOF);
 	 <!-- Crit/Parry chances, modeled after CE patches for core melee weapons -->
          <li Class="PatchOperationAdd">
-             <xpath>Defs/ThingDef[defName="$weapon"]</xpath>
+             <xpath>Defs/ThingDef[$xpathname]</xpath>
              <value>
                  <equippedStatOffsets>
 $val

@@ -98,7 +98,7 @@ sub generate_patches
     $self->__start_patch();
 
     # Step through source xml.
-    # Generate a template for each $patchable found.
+    # Generate a template for each patchable element found.
     # If entity is found that we don't have CE values for, warn and skip.
     #
     # Perf:
@@ -106,18 +106,20 @@ sub generate_patches
     # - Load times: Defs/ThingDef < Defs/ThingDef << */ThingDef/ <<< //ThingDef/
     #
     my $basenode = $self->base_node_name();
+    my($nametag, $xpathname);
     foreach $elem ( @{$self->{sourcexml}->{$basenode}} )
     {
         # Skip non-entities and unknown entities
         next unless $self->is_elem_patchable($elem);
-	$patchable = $elem->{defName};
-	$self->__print_element_header($patchable);
+	$nametag = $self->__nametag($elem);
+	$xpathname = $self->__xpathname($elem);
+	$self->__print_element_header($nametag);
 
         # Add bodyShape
-        $val = $self->{cedata}->{$patchable}->{bodyShape} || $DEFAULT{bodyShape};
+        $val = $self->{cedata}->{$nametag}->{bodyShape} || $DEFAULT{bodyShape};
         $self->__print_patch(<<EOF);
     <li Class="PatchOperationAddModExtension">
-    <xpath>Defs/${basenode}[defName="$patchable"]</xpath>
+    <xpath>Defs/${basenode}[$xpathname]</xpath>
     <value>
         <li Class="CombatExtended.RacePropertiesExtensionCE">
             <bodyShape>$val</bodyShape>
@@ -135,18 +137,18 @@ EOF
         if (ref(eval{$elem->{verbs}->{li}}) eq 'ARRAY')
 	{
 	    $self->__print_patch(<<EOF);
-    <!-- Patch $patchable : Verbs (convert to tools) -->
+    <!-- Patch $nametag : Verbs (convert to tools) -->
 
     <!-- Add tools node if it doesn't exist -->
     <li Class="PatchOperationSequence">
     <success>Always</success>
     <operations>
         <li Class="PatchOperationTest">
-        <xpath>Defs/${basenode}[defName="$patchable"]/tools</xpath>
+        <xpath>Defs/${basenode}[$xpathname]/tools</xpath>
             <success>Invert</success>
         </li>
         <li Class="PatchOperationAdd">
-        <xpath>Defs/${basenode}[defName="$patchable"]</xpath>
+        <xpath>Defs/${basenode}[$xpathname]</xpath>
             <value>
                 <tools />
             </value>
@@ -156,7 +158,7 @@ EOF
 
     <!-- Convert old verbs to new tools nodes -->
     <li Class="PatchOperationAdd">
-    <xpath>Defs/${basenode}[defName="$patchable"]/tools</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/tools</xpath>
     <value>
 EOF
 	    # Step through verb fields in source xml
@@ -211,7 +213,7 @@ EOF
 		}
 
                 # Add CE armor penetration
-		$val = $self->__get_tool_armor_pen($verb->{linkedBodyPartsGroup}, $verb->{meleeDamageDef}, $patchable);
+		$val = $self->__get_tool_armor_pen($verb->{linkedBodyPartsGroup}, $verb->{meleeDamageDef}, $nametag);
 	        $self->__print_patch(<<EOF);
             <armorPenetration>$val</armorPenetration>
         </li>
@@ -225,7 +227,7 @@ EOF
 
     <!-- Delete old verbs node (causes CE errors) -->
     <li Class="PatchOperationRemove">
-    <xpath>Defs/${basenode}[defName="$patchable"]/verbs</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/verbs</xpath>
     </li>
 
 EOF
@@ -239,13 +241,13 @@ EOF
         if ($elem->{tools}->{li})
         {
 	    $self->__print_patch(<<EOF);
-    <!-- Patch $patchable : Tools -->
+    <!-- Patch $nametag : Tools -->
 
 EOF
             foreach $tool ( @{ $elem->{tools}->{li} } )
             {
 		# armor penetration
-		$val = $self->__get_tool_armor_pen($tool->{linkedBodyPartsGroup}, $tool->{capacities}->{li}->[0], $patchable);
+		$val = $self->__get_tool_armor_pen($tool->{linkedBodyPartsGroup}, $tool->{capacities}->{li}->[0], $nametag);
 
 		# Patch tool by id || bodypartgroup
 		# (id needed if multiple capacities for same body, else not defined,
@@ -254,13 +256,13 @@ EOF
 	        $tag = $tool->{id} ? "id" : "linkedBodyPartsGroup";
                 $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">
-    <xpath>Defs/${basenode}[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/tools/li[$tag="$tool->{$tag}"]</xpath>
         <attribute>Class</attribute>
         <value>CombatExtended.ToolCE</value>
     </li>
 
     <li Class="PatchOperationAdd">
-    <xpath>Defs/${basenode}[defName="$patchable"]/tools/li[$tag="$tool->{$tag}"]</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/tools/li[$tag="$tool->{$tag}"]</xpath>
     <value>
         <armorPenetration>$val</armorPenetration>
     </value>
@@ -273,19 +275,19 @@ EOF
 
         # Adjust stats
         $self->__print_patch(<<EOF);
-    <!-- Patch $patchable : Stats -->
+    <!-- Patch $nametag : Stats -->
 
 EOF
 
         # Add baseHealthScale
-        if (exists $self->{cedata}->{$patchable}->{baseHealthScale})
+        if (exists $self->{cedata}->{$nametag}->{baseHealthScale})
         {
             $self->__print_patch(<<EOF);
 
     <li Class="PatchOperationReplace">
-    <xpath>Defs/${basenode}[defName="$patchable"]/race/baseHealthScale</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/race/baseHealthScale</xpath>
     <value>
-        <baseHealthScale>$self->{cedata}->{$patchable}->{baseHealthScale}</baseHealthScale>
+        <baseHealthScale>$self->{cedata}->{$nametag}->{baseHealthScale}</baseHealthScale>
     </value>
     </li>
 
@@ -297,10 +299,10 @@ EOF
 	$val = "";
         foreach $tag (qw(MeleeDodgeChance MeleeCritChance), @ARMORTYPES)
         {
-            if (exists $self->{cedata}->{$patchable}->{$tag})
+            if (exists $self->{cedata}->{$nametag}->{$tag})
 	    {
 	        $val = $val . <<EOF;
-        <$tag>$self->{cedata}->{$patchable}->{$tag}</$tag>
+        <$tag>$self->{cedata}->{$nametag}->{$tag}</$tag>
 EOF
 	    }
         }
@@ -313,7 +315,7 @@ EOF
          These values are easy to check in-game. -->
 
     <li Class="PatchOperationAdd">
-    <xpath>Defs/${basenode}[defName="$patchable"]/statBases</xpath>
+    <xpath>Defs/${basenode}[$xpathname]/statBases</xpath>
     <value>
 $val
     </value>
@@ -344,7 +346,6 @@ sub __generate_patches_last
    ## Let child insert patches last in sequence
 }
 
-
 #############
 # Utilities #
 #############
@@ -358,7 +359,7 @@ sub __get_tool_armor_pen
     my $ap = eval { $TOOLAP{$bodypartgroup}->{$capacity} };  # ?.
     if (!defined $ap)
     {
-        $self->__warn("$patchable: $name: Unknown tool $bodypartgroup capacity $capacity. Using default AP. Please update \%TOOLAP.");
+        $self->__warn("$name: Unknown tool $bodypartgroup capacity $capacity. Using default AP. Please update \%TOOLAP.");
         $ap = $DEFAULT_AP;
     }
 

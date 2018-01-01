@@ -146,34 +146,34 @@ sub is_elem_patchable
 {
     my($self, $thiselem) = @_;
 
-    my $defname = $thiselem->{defName};
+    my $nametag = $self->__nametag($thiselem);
 
-    return 0 unless defined $defname;
+    return 0 unless defined $nametag;
     
     if ($self->has_expected_parents())
     {
         if ($self->is_expected_parent($thiselem->{ParentName}))
 	{
 	    # Warn user to update cedata for new patchable elements found in source mod
-	    if (!defined $self->{cedata}->{$defname} && $self->{__patches_require_cedata})
+	    if (!defined $self->{cedata}->{$nametag} && $self->{__patches_require_cedata})
 	    {
-	        $self->__warn("New entity found: $defname (Skipping - Please add CE DATA).");
+	        $self->__warn("New entity found: $nametag (Skipping - Please add CE DATA).");
 	        return 0;
 	    }
 	    return 1;
 	}
 
 	# If defined in cedata, patch it even though parent doesn't match, but warn user.
-        elsif (defined $self->{cedata}->{$defname})
+        elsif (defined $self->{cedata}->{$nametag})
 	{
-            $self->__warn("Entity '$defname' in cedata has unexpected parent '$thiselem->{ParentName}'. Patching anyway.");
+            $self->__warn("Entity '$nametag' in cedata has unexpected parent '$thiselem->{ParentName}'. Patching anyway.");
 	    return 1;
 	}
 	return 0;
     }
 
     # If caller didn't define expected parent, only patch elements defined in his cedata.
-    if (defined $self->{cedata}->{$defname})
+    if (defined $self->{cedata}->{$nametag})
     {
         return 1;
     }
@@ -219,6 +219,21 @@ sub expected_parents
         $self->{expected_parents} = { map { $_ => 1 } (ref($parentnames[0]) eq 'ARRAY' ? @{$parentnames[0]} : @parentnames) };
     }
     return $self->{expected_parents};
+}
+
+##########################################
+# Nametag utils - handle defName vs Name #
+##########################################
+# (call as method for consistency, $self->__nametag($elem). Don't use $self)
+#
+# Some elements define defName, some define Name, some define both.
+# - nametag = defName > Name. Used internally to check cedata entries and generate headers/msgs.
+# - xpathname = xpath identifier (defname="X" or @Name="X")
+#
+sub __nametag { return $_[1]->{defName} || $_[1]->{Name}; }
+sub __xpathname
+{
+    return $_[1]->{defName} ? "defName=\"$_[1]->{defName}\"" : "\@Name=\"$_[1]->{Name}\"";
 }
 
 #############

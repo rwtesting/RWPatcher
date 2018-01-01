@@ -95,30 +95,29 @@ sub generate_patches
     $self->__start_patch();
 
     # Step through source xml.
-    # Generate patch for each known defName/weapon in the same order.
-    my($weapon, $data, $key);
+    # Generate patch for each known weapon/$nametag (in the same order as source).
+    my($nametag, $xpathname, $data, $key);
     foreach my $elem ( @{$self->{sourcexml}->{ThingDef}} )
     {
         # Skip non-entities and unknown entities
         next unless $self->is_elem_patchable($elem);
-	$patchable = $elem->{defName};
-
-        $weapon = $elem->{defName};
-        $data = $self->{cedata}{$elem->{defName}};
+	$nametag = $self->__nametag($elem);
+	$xpathname = $self->__xpathname($elem);
+        $data = $self->{cedata}->{$nametag};
 
         $self->__print_patch(<<EOF);
-    <!-- ========== $elem->{defName} ========== -->
+    <!-- ========== $nametag ========== -->
 
     <!-- Create tools node if it doesn't exist -->
     <li Class="PatchOperationSequence">
         <success>Always</success>
         <operations>
             <li Class="PatchOperationTest">
-            <xpath>Defs/ThingDef[defName="$weapon"]/tools</xpath>
+            <xpath>Defs/ThingDef[$xpathname]/tools</xpath>
                 <success>Invert</success>
             </li>
             <li Class="PatchOperationAdd">
-            <xpath>Defs/ThingDef[defName="$weapon"]</xpath>
+            <xpath>Defs/ThingDef[$xpathname]</xpath>
                 <value>
                       <tools />
                 </value>
@@ -128,7 +127,7 @@ sub generate_patches
 
     <!-- Add tools melee values -->
     <li Class="PatchOperationAdd">
-        <xpath>Defs/ThingDef[defName="$weapon"]/tools</xpath>
+        <xpath>Defs/ThingDef[$xpathname]/tools</xpath>
         <value>
             <li Class="CombatExtended.ToolCE">
                 <label>stock</label>
@@ -168,7 +167,7 @@ sub generate_patches
 
     <!-- CE conversion -->
     <li Class="CombatExtended.PatchOperationMakeGunCECompatible">
-        <defName>$weapon</defName>
+        <defName>$nametag</defName>
         <statBases>
             <Bulk>$data->{Bulk}</Bulk>
             <SightsEfficiency>$data->{SightsEfficiency}</SightsEfficiency>
@@ -244,20 +243,20 @@ EOF
         {
             $self->__print_patch(<<EOF);
     <li Class="PatchOperationAttributeSet">
-    <xpath>Defs/ThingDef[defName="$weapon"]/verbs/li</xpath>
+    <xpath>Defs/ThingDef[$xpathname]/verbs/li</xpath>
         <attribute>Class</attribute>
         <value>CombatExtended.VerbPropertiesCE</value>
     </li>
 
     <li Class="PatchOperationReplace">
-    <xpath>Defs/ThingDef[defName="$weapon"]/verbs/li/verbClass</xpath>
+    <xpath>Defs/ThingDef[$xpathname]/verbs/li/verbClass</xpath>
     <value>
         <verbClass>$VERBCLASS</verbClass>
     </value>
     </li>
 
     <li Class="PatchOperationReplace">
-    <xpath>Defs/ThingDef[defName="$weapon"]/verbs/li/defaultProjectile</xpath>
+    <xpath>Defs/ThingDef[$xpathname]/verbs/li/defaultProjectile</xpath>
     <value>
         <defaultProjectile>$data->{defaultProjectile}</defaultProjectile>
     </value>

@@ -72,6 +72,7 @@ sub new
 sub __generate_patches_first
 {
     my($self, $curelem) = @_;
+    my $xpathname = $self->__xpathname($curelem);
 
     # CE additions for weapon-wielding pawns
     $self->__print_patch(<<EOF);
@@ -80,11 +81,11 @@ sub __generate_patches_first
     <success>Always</success>
     <operations>
         <li Class="PatchOperationTest">
-        <xpath>/Defs/AlienRace.ThingDef_AlienRace[defName="$curelem->{defName}"]/comps</xpath>
+        <xpath>/Defs/AlienRace.ThingDef_AlienRace[$xpathname]/comps</xpath>
             <success>Invert</success>
         </li>
         <li Class="PatchOperationAdd">
-        <xpath>/Defs/AlienRace.ThingDef_AlienRace[defName="$curelem->{defName}"]</xpath>
+        <xpath>/Defs/AlienRace.ThingDef_AlienRace[$xpathname]</xpath>
         <value>
             <comps />
         </value>
@@ -93,7 +94,7 @@ sub __generate_patches_first
     </li>
 
     <li Class="PatchOperationAdd">
-    <xpath>/Defs/AlienRace.ThingDef_AlienRace[defName="$curelem->{defName}"]/comps</xpath>
+    <xpath>/Defs/AlienRace.ThingDef_AlienRace[$xpathname]/comps</xpath>
         <value>
             <li>
                 <compClass>CombatExtended.CompPawnGizmo</compClass>

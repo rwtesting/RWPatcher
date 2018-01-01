@@ -82,22 +82,23 @@ sub generate_patches
     $self->__start_patch();
 
     # Step through source xml.
-    # Generate a template for each $patchable found.
-    my($patchable, $ammo_min, $ammo_max);
+    # Generate a template for each patchable element found.
+    my($nametag, $xpathname, $ammo_min, $ammo_max);
     foreach my $elem ( @{$self->{sourcexml}->{PawnKindDef}} )
     {
         # Skip non-entities and unknown entities
         next unless $self->is_elem_patchable($elem);
-	$patchable = $elem->{defName};
-	$ammo_min = eval { $self->{cedata}->{$patchable}->{AmmoMin} } || $self->{AmmoMin} || $DEF_AMMO_MIN;
-	$ammo_max = eval { $self->{cedata}->{$patchable}->{AmmoMax} } || $self->{AmmoMax} || $DEF_AMMO_MAX;
+	$nametag = $self->__nametag($elem);
+	$xpathname = $self->__xpathname($elem);
+	$ammo_min = eval { $self->{cedata}->{$nametag}->{AmmoMin} } || $self->{AmmoMin} || $DEF_AMMO_MIN;
+	$ammo_max = eval { $self->{cedata}->{$nametag}->{AmmoMax} } || $self->{AmmoMax} || $DEF_AMMO_MAX;
 
         # Start patch
         $self->__print_patch(<<EOF);
-    <!-- ========== $patchable ========== -->
+    <!-- ========== $nametag ========== -->
 
     <li Class="PatchOperationAddModExtension">
-    <xpath>Defs/PawnKindDef[defName="$patchable"]</xpath>
+    <xpath>Defs/PawnKindDef[$xpathname]</xpath>
     <value>
         <li Class="CombatExtended.LoadoutPropertiesExtension">
             <primaryMagazineCount>
